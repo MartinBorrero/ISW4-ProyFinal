@@ -1,0 +1,28 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group = 'co.icesi.project'
+version = '1.0'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+
+    implementation 'org.apache.commons:commons-csv:1.10.0'
+
+    implementation 'org.apache.poi:poi-ooxml:5.2.5'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+}
+
+application {
+    mainClass = 'co.icesi.project.app.Main'
+}
+
+test {
+    useJUnitPlatform()
+}
