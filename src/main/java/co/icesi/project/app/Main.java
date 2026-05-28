@@ -8,9 +8,9 @@ public class Main {
 
         String datagramPath = "data/datagrams-MiniPilot.csv";
         String routesPath = "data/lines-241-ActiveGT.csv";
+        String excelOutput = "output/resultados-v1.xlsx";
 
         ProcessingController controller = new ProcessingController();
-
-        controller.execute(datagramPath, routesPath);
+        controller.execute(datagramPath, routesPath, excelOutput);
     }
 }

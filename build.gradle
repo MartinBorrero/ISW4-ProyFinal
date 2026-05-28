@@ -19,6 +19,10 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
 
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.10.2'
+
+    implementation 'org.apache.logging.log4j:log4j-to-slf4j:2.23.1'
+
+    implementation 'org.slf4j:slf4j-simple:2.0.13'
 }
 
 application {

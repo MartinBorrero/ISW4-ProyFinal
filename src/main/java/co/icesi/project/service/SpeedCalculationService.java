@@ -11,45 +11,61 @@ import java.util.*;
 public class SpeedCalculationService {
 
     private static final double EARTH_RADIUS_KM = 6371.0;
+    private static final double MAX_SPEED_KMH = 80.0;
+
+    // Constantes precalculadas para Haversine
+    private static final double TO_RAD = Math.PI / 180.0;
 
     private double haversine(double lat1, double lon1, double lat2, double lon2) {
+        double dLat = (lat2 - lat1) * TO_RAD;
+        double dLon = (lon2 - lon1) * TO_RAD;
+        double lat1Rad = lat1 * TO_RAD;
+        double lat2Rad = lat2 * TO_RAD;
 
-        double dLat = Math.toRadians(lat2 - lat1);
-        double dLon = Math.toRadians(lon2 - lon1);
+        double sinDLat = Math.sin(dLat / 2);
+        double sinDLon = Math.sin(dLon / 2);
 
-        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
-                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
-                        * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        double a = sinDLat * sinDLat
+                + Math.cos(lat1Rad) * Math.cos(lat2Rad) * sinDLon * sinDLon;
 
         return EARTH_RADIUS_KM * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
     public List<SpeedRecord> calculateAverageSpeeds(List<Datagram> datagrams, List<Route> activeRoutes) {
 
+        // Usar HashSet para lookup O(1) en vez de iterar la lista
         Set<Integer> activeRouteIds = new HashSet<>();
         for (Route r : activeRoutes) {
             activeRouteIds.add(r.getRouteId());
         }
 
-        Map<String, List<Double>> groupedSpeeds = new HashMap<>();
+        // Pre-filtrar datagrams invalidos antes del sort (reduce datos a ordenar)
+        List<Datagram> filtered = new ArrayList<>(datagrams.size());
+        for (Datagram d : datagrams) {
+            if (d.getLineId() > 0 && activeRouteIds.contains(d.getLineId())) {
+                filtered.add(d);
+            }
+        }
 
-        datagrams.sort(Comparator.comparingInt(Datagram::getBusId)
+        // Sort por busId -> lineId -> fecha
+        filtered.sort(Comparator.comparingInt(Datagram::getBusId)
                 .thenComparingInt(Datagram::getLineId)
                 .thenComparing(Datagram::getDatagramDate));
 
-        for (int i = 1; i < datagrams.size(); i++) {
+        // Acumular velocidades por clave lineId|mes
+        // Usar HashMap con capacidad inicial para evitar rehashing
+        Map<String, DoubleSummaryStatistics> groupedStats = new HashMap<>(256);
 
-            Datagram previous = datagrams.get(i - 1);
-            Datagram current = datagrams.get(i);
+        Datagram previous = null;
 
-            if (previous.getBusId() != current.getBusId())
+        for (Datagram current : filtered) {
+
+            if (previous == null
+                    || previous.getBusId() != current.getBusId()
+                    || previous.getLineId() != current.getLineId()) {
+                previous = current;
                 continue;
-            if (previous.getLineId() != current.getLineId())
-                continue;
-            if (current.getLineId() <= 0)
-                continue;
-            if (!activeRouteIds.contains(current.getLineId()))
-                continue;
+            }
 
             double distanceKm = haversine(
                     previous.getLatitude(), previous.getLongitude(),
@@ -59,35 +75,31 @@ public class SpeedCalculationService {
                     previous.getDatagramDate(),
                     current.getDatagramDate()).getSeconds();
 
+            previous = current;
+
             if (seconds <= 0 || distanceKm <= 0)
                 continue;
 
-            double hours = seconds / 3600.0;
-            double speed = distanceKm / hours;
+            double speed = distanceKm / (seconds / 3600.0);
 
-            if (speed > 80)
-                continue; // filtrar outliers
+            if (speed > MAX_SPEED_KMH)
+                continue;
 
             YearMonth month = YearMonth.from(current.getDatagramDate());
             String key = current.getLineId() + "|" + month;
 
-            groupedSpeeds.putIfAbsent(key, new ArrayList<>());
-            groupedSpeeds.get(key).add(speed);
+            groupedStats.computeIfAbsent(key, k -> new DoubleSummaryStatistics())
+                    .accept(speed);
         }
 
-        List<SpeedRecord> results = new ArrayList<>();
+        // Construir resultados
+        List<SpeedRecord> results = new ArrayList<>(groupedStats.size());
 
-        for (String key : groupedSpeeds.keySet()) {
-
-            String[] parts = key.split("\\|");
+        for (Map.Entry<String, DoubleSummaryStatistics> entry : groupedStats.entrySet()) {
+            String[] parts = entry.getKey().split("\\|");
             int lineId = Integer.parseInt(parts[0]);
             YearMonth month = YearMonth.parse(parts[1]);
-
-            double average = groupedSpeeds.get(key).stream()
-                    .mapToDouble(Double::doubleValue)
-                    .average()
-                    .orElse(0.0);
-
+            double average = entry.getValue().getAverage();
             results.add(new SpeedRecord(lineId, month, average));
         }
 

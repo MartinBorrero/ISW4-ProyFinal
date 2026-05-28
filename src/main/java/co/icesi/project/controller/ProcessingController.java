@@ -7,28 +7,48 @@ import co.icesi.project.repository.DatagramRepository;
 import co.icesi.project.repository.RouteRepository;
 import co.icesi.project.service.SpeedCalculationService;
 import co.icesi.project.view.ConsoleView;
+import co.icesi.project.view.ExcelView;
 
 import java.util.List;
 
 public class ProcessingController {
 
     private final DatagramRepository datagramRepository;
+    private final RouteRepository routeRepository;
     private final SpeedCalculationService speedCalculationService;
     private final ConsoleView consoleView;
-    private final RouteRepository routeRepository;
+    private final ExcelView excelView;
 
     public ProcessingController() {
-
         this.datagramRepository = new DatagramRepository();
         this.routeRepository = new RouteRepository();
         this.speedCalculationService = new SpeedCalculationService();
         this.consoleView = new ConsoleView();
+        this.excelView = new ExcelView();
     }
 
-    public void execute(String datagramPath, String routesPath) {
+    public void execute(String datagramPath, String routesPath, String excelOutputPath) {
+
+        long t0 = System.currentTimeMillis();
+
         List<Route> routes = routeRepository.loadRoutes(routesPath);
         List<Datagram> datagrams = datagramRepository.loadDatagrams(datagramPath);
+
+        long tLoad = System.currentTimeMillis();
+
         List<SpeedRecord> results = speedCalculationService.calculateAverageSpeeds(datagrams, routes);
+
+        long tCalc = System.currentTimeMillis();
+
         consoleView.showResults(results);
+        excelView.exportResults(results, excelOutputPath);
+
+        long tTotal = System.currentTimeMillis();
+
+        System.out.println("\n===== TIEMPOS DE EJECUCION =====");
+        System.out.println("Carga de datos : " + (tLoad - t0) + " ms");
+        System.out.println("Calculo        : " + (tCalc - tLoad) + " ms");
+        System.out.println("Total          : " + (tTotal - t0) + " ms");
+        System.out.println("Registros      : " + results.size());
     }
 }
