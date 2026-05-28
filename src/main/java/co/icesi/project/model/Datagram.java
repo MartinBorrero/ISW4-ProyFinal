@@ -7,13 +7,15 @@ public class Datagram {
     private int lineId;
     private int busId;
     private LocalDateTime datagramDate;
-    private long odometer;
+    private double latitude;
+    private double longitude;
 
-    public Datagram(int lineId, int busId, LocalDateTime datagramDate, long odometer) {
+    public Datagram(int lineId, int busId, LocalDateTime datagramDate, double latitude, double longitude) {
         this.lineId = lineId;
         this.busId = busId;
         this.datagramDate = datagramDate;
-        this.odometer = odometer;
+        this.latitude = latitude;
+        this.longitude = longitude;
     }
 
     public int getLineId() {
@@ -28,7 +30,11 @@ public class Datagram {
         return datagramDate;
     }
 
-    public long getOdometer() {
-        return odometer;
+    public double getLatitude() {
+        return latitude;
+    }
+
+    public double getLongitude() {
+        return longitude;
     }
 }

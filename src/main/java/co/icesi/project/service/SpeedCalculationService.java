@@ -1,6 +1,7 @@
 package co.icesi.project.service;
 
 import co.icesi.project.model.Datagram;
+import co.icesi.project.model.Route;
 import co.icesi.project.model.SpeedRecord;
 
 import java.time.Duration;
@@ -9,7 +10,26 @@ import java.util.*;
 
 public class SpeedCalculationService {
 
-    public List<SpeedRecord> calculateAverageSpeeds(List<Datagram> datagrams) {
+    private static final double EARTH_RADIUS_KM = 6371.0;
+
+    private double haversine(double lat1, double lon1, double lat2, double lon2) {
+
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLon = Math.toRadians(lon2 - lon1);
+
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                        * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+
+        return EARTH_RADIUS_KM * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    public List<SpeedRecord> calculateAverageSpeeds(List<Datagram> datagrams, List<Route> activeRoutes) {
+
+        Set<Integer> activeRouteIds = new HashSet<>();
+        for (Route r : activeRoutes) {
+            activeRouteIds.add(r.getRouteId());
+        }
 
         Map<String, List<Double>> groupedSpeeds = new HashMap<>();
 
@@ -17,42 +37,39 @@ public class SpeedCalculationService {
                 .thenComparingInt(Datagram::getLineId)
                 .thenComparing(Datagram::getDatagramDate));
 
-        System.out.println(datagrams.toString());
-
         for (int i = 1; i < datagrams.size(); i++) {
 
             Datagram previous = datagrams.get(i - 1);
             Datagram current = datagrams.get(i);
 
-            if (previous.getBusId() != current.getBusId()) {
-                System.out.println("Skip por busId: " + previous.getBusId() + " != " + current.getBusId());
+            if (previous.getBusId() != current.getBusId())
                 continue;
-            }
-
-            if (previous.getLineId() != current.getLineId()) {
-                System.out.println("Skip por lineId: " + previous.getLineId() + " != " + current.getLineId());
+            if (previous.getLineId() != current.getLineId())
                 continue;
-            }
+            if (current.getLineId() <= 0)
+                continue;
+            if (!activeRouteIds.contains(current.getLineId()))
+                continue;
 
-            long distanceMeters = current.getOdometer();
+            double distanceKm = haversine(
+                    previous.getLatitude(), previous.getLongitude(),
+                    current.getLatitude(), current.getLongitude());
 
             long seconds = Duration.between(
                     previous.getDatagramDate(),
                     current.getDatagramDate()).getSeconds();
 
-            if (seconds <= 0 || distanceMeters <= 0) {
-                System.out.println("Skip por tiempo/distancia: seconds=" + seconds + " distancia=" + distanceMeters);
+            if (seconds <= 0 || distanceKm <= 0)
                 continue;
-            }
 
-            double distanceKm = distanceMeters / 1000.0;
             double hours = seconds / 3600.0;
-
             double speed = distanceKm / hours;
 
-            YearMonth month = YearMonth.from(current.getDatagramDate());
+            if (speed > 80)
+                continue; // filtrar outliers
 
-            String key = current.getLineId() + "-" + month;
+            YearMonth month = YearMonth.from(current.getDatagramDate());
+            String key = current.getLineId() + "|" + month;
 
             groupedSpeeds.putIfAbsent(key, new ArrayList<>());
             groupedSpeeds.get(key).add(speed);
@@ -60,19 +77,13 @@ public class SpeedCalculationService {
 
         List<SpeedRecord> results = new ArrayList<>();
 
-        System.out.println("Grouped Speeds: " + groupedSpeeds.size());
-
         for (String key : groupedSpeeds.keySet()) {
 
-            String[] parts = key.split("-");
-
+            String[] parts = key.split("\\|");
             int lineId = Integer.parseInt(parts[0]);
+            YearMonth month = YearMonth.parse(parts[1]);
 
-            YearMonth month = YearMonth.parse(parts[1] + "-" + parts[2]);
-
-            List<Double> speeds = groupedSpeeds.get(key);
-
-            double average = speeds.stream()
+            double average = groupedSpeeds.get(key).stream()
                     .mapToDouble(Double::doubleValue)
                     .average()
                     .orElse(0.0);

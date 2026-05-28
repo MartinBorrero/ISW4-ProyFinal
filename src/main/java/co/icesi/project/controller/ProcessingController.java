@@ -28,8 +28,7 @@ public class ProcessingController {
     public void execute(String datagramPath, String routesPath) {
         List<Route> routes = routeRepository.loadRoutes(routesPath);
         List<Datagram> datagrams = datagramRepository.loadDatagrams(datagramPath);
-        List<SpeedRecord> results = speedCalculationService.calculateAverageSpeeds(datagrams);
-        System.out.println(results);
+        List<SpeedRecord> results = speedCalculationService.calculateAverageSpeeds(datagrams, routes);
         consoleView.showResults(results);
     }
 }
