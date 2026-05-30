@@ -1,0 +1,56 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Java
+*.class
+out/
+
+# Logs
+*.log
+
+# IDEs
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Generated files
+bin/
+
+# IntelliJ
+*.ipr
+*.iws
+
+# Eclipse
+.apt_generated/
+.factorypath
+
+# NetBeans
+nbproject/private/
+nbbuild/
+dist/
+nbdist/
+
+# VS Code Java
+.classpath
+.project
+.settings/
+
+# Datagram
+data/datagrams-MiniPilot.csv

@@ -6,7 +6,6 @@ import co.icesi.project.model.SpeedRecord;
 import co.icesi.project.repository.DatagramRepository;
 import co.icesi.project.repository.RouteRepository;
 import co.icesi.project.service.SpeedCalculationService;
-import co.icesi.project.view.ConsoleView;
 import co.icesi.project.view.ExcelView;
 
 import java.util.List;
@@ -16,14 +15,12 @@ public class ProcessingController {
     private final DatagramRepository datagramRepository;
     private final RouteRepository routeRepository;
     private final SpeedCalculationService speedCalculationService;
-    private final ConsoleView consoleView;
     private final ExcelView excelView;
 
     public ProcessingController() {
         this.datagramRepository = new DatagramRepository();
         this.routeRepository = new RouteRepository();
         this.speedCalculationService = new SpeedCalculationService();
-        this.consoleView = new ConsoleView();
         this.excelView = new ExcelView();
     }
 
@@ -40,7 +37,6 @@ public class ProcessingController {
 
         long tCalc = System.currentTimeMillis();
 
-        consoleView.showResults(results);
         excelView.exportResults(results, excelOutputPath);
 
         long tTotal = System.currentTimeMillis();

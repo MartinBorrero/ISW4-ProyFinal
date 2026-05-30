@@ -13,7 +13,6 @@ public class SpeedCalculationService {
     private static final double EARTH_RADIUS_KM = 6371.0;
     private static final double MAX_SPEED_KMH = 80.0;
 
-    // Constantes precalculadas para Haversine
     private static final double TO_RAD = Math.PI / 180.0;
 
     private double haversine(double lat1, double lon1, double lat2, double lon2) {
@@ -33,16 +32,14 @@ public class SpeedCalculationService {
 
     public List<SpeedRecord> calculateAverageSpeeds(List<Datagram> datagrams, List<Route> activeRoutes) {
 
-        // Usar HashSet para lookup O(1) en vez de iterar la lista
         Set<Integer> activeRouteIds = new HashSet<>();
         for (Route r : activeRoutes) {
             activeRouteIds.add(r.getRouteId());
         }
 
-        // Pre-filtrar datagrams invalidos antes del sort (reduce datos a ordenar)
         List<Datagram> filtered = new ArrayList<>(datagrams.size());
         for (Datagram d : datagrams) {
-            if (d.getLineId() > 0 && activeRouteIds.contains(d.getLineId())) {
+            if (d.getLineId() >= -1 && activeRouteIds.contains(d.getLineId())) {
                 filtered.add(d);
             }
         }
@@ -52,8 +49,6 @@ public class SpeedCalculationService {
                 .thenComparingInt(Datagram::getLineId)
                 .thenComparing(Datagram::getDatagramDate));
 
-        // Acumular velocidades por clave lineId|mes
-        // Usar HashMap con capacidad inicial para evitar rehashing
         Map<String, DoubleSummaryStatistics> groupedStats = new HashMap<>(256);
 
         Datagram previous = null;
@@ -102,7 +97,6 @@ public class SpeedCalculationService {
             double average = entry.getValue().getAverage();
             results.add(new SpeedRecord(lineId, month, average));
         }
-
         return results;
     }
 }

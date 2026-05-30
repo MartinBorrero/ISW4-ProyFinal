@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="co.icesi.project.service.SpeedCalculationServiceTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-05-28T23:47:39.828Z" hostname="LAMAMALONA" time="0.025">
+<testsuite name="co.icesi.project.service.SpeedCalculationServiceTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-05-30T21:03:56.003Z" hostname="LAMAMALONA" time="0.05">
   <properties/>
-  <testcase name="testMismaPosicionSeIgnora()" classname="co.icesi.project.service.SpeedCalculationServiceTest" time="0.013"/>
-  <testcase name="testPromedioDeTresVelocidades()" classname="co.icesi.project.service.SpeedCalculationServiceTest" time="0.008"/>
+  <testcase name="testMismaPosicionSeIgnora()" classname="co.icesi.project.service.SpeedCalculationServiceTest" time="0.028"/>
+  <testcase name="testPromedioDeTresVelocidades()" classname="co.icesi.project.service.SpeedCalculationServiceTest" time="0.015"/>
   <testcase name="testBusesDiferentesNoSeMezclan()" classname="co.icesi.project.service.SpeedCalculationServiceTest" time="0.001"/>
   <testcase name="testCalculoBasico()" classname="co.icesi.project.service.SpeedCalculationServiceTest" time="0.001"/>
   <testcase name="testRutaNoActivaSeIgnora()" classname="co.icesi.project.service.SpeedCalculationServiceTest" time="0.001"/>
