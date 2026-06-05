@@ -5,6 +5,7 @@ import com.zeroc.Ice.ObjectAdapter;
 import com.zeroc.Ice.ObjectPrx;
 import com.zeroc.Ice.Util;
 import sitmmio.v3.slice.MasterPrx;
+import sitmmio.v3.slice.VisualizationPrx;
 import sitmmio.v3.slice.WorkerPrx;
 
 import java.util.UUID;
@@ -27,7 +28,8 @@ public class WorkerServer {
             communicator = Util.initialize(args);
             String configuredId = communicator.getProperties().getProperty("Worker.Id");
             String workerId = configuredId == null || configuredId.isBlank() ? "worker-" + UUID.randomUUID() : configuredId;
-            WorkerI servant = new WorkerI(workerId);
+            VisualizationPrx visualization = VisualizationPrx.uncheckedCast(communicator.propertyToProxy("Visualization.Proxy"));
+            WorkerI servant = new WorkerI(workerId, visualization);
             ObjectAdapter adapter = communicator.createObjectAdapter("WorkerAdapter");
             ObjectPrx workerBase = adapter.add(servant, Util.stringToIdentity(workerId));
             WorkerPrx workerProxy = WorkerPrx.uncheckedCast(workerBase);
@@ -54,6 +56,7 @@ public class WorkerServer {
             Communicator shutdownCommunicator = communicator;
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 registrationExecutor.shutdownNow();
+                servant.shutdown();
                 try {
                     MasterPrx master = MasterPrx.checkedCast(shutdownCommunicator.propertyToProxy("Master.Proxy"));
                     if (master != null && registered.get()) {

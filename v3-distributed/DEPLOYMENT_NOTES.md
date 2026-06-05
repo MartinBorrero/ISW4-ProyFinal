@@ -61,16 +61,19 @@ Computer 2 - Analytics Coordination Node
 Computer 3 - Analytics Worker Node 1
 - SpeedPartitionWorker JVM
 - Worker endpoint: tcp -h <PC3_IP> -p 10011
+- Visualization proxy: tcp -h <PC1_IP> -p 10003
 - Local data: data/partitions-N/partition-0.csv
 
 Computer 4 - Analytics Worker Node 2
 - SpeedPartitionWorker JVM
 - Worker endpoint: tcp -h <PC4_IP> -p 10012
+- Visualization proxy: tcp -h <PC1_IP> -p 10003
 - Local data: data/partitions-N/partition-1.csv
 
 Computer N+2 - Analytics Worker Node N
 - SpeedPartitionWorker JVM
 - Worker endpoint: tcp -h <PCN_IP> -p 10010+N
+- Visualization proxy: tcp -h <PC1_IP> -p 10003
 - Local data: data/partitions-N/partition-(N-1).csv
 ```
 
@@ -162,8 +165,8 @@ bash v3-distributed/start-visualization.sh <PC1_IP>
 Start each worker:
 
 ```bash
-bash v3-distributed/start-worker.sh worker-1 10011 <MASTER_IP> <WORKER_1_IP>
-bash v3-distributed/start-worker.sh worker-2 10012 <MASTER_IP> <WORKER_2_IP>
+bash v3-distributed/start-worker.sh worker-1 10011 <MASTER_IP> <WORKER_1_IP> <PC1_IP>
+bash v3-distributed/start-worker.sh worker-2 10012 <MASTER_IP> <WORKER_2_IP> <PC1_IP>
 ```
 
 Start Master on PC2:
@@ -202,7 +205,18 @@ DatagramPartitioner -> SpeedCalculationBroker -> SpeedCalculationMaster -> Speed
 
 ### Event-Driven Visualization
 
-`SpeedCalculationBroker` and `SpeedCalculationMaster` publish events to `BusEventMonitor` asynchronously. Visualization does not block ICE request processing.
+`SpeedCalculationBroker` and `SpeedCalculationMaster` publish message-bus events to `BusEventMonitor` asynchronously. `SpeedPartitionWorker` also publishes sampled `BUS_POSITION` events with bus id, route id, latitude and longitude so the GUI can draw a real-time map while partitions are processed.
+
+The visualization has two panes:
+
+```text
+Top: OpenStreetMap Cali map with animated SITM-MIO bus positions from worker datagrams
+Bottom: distributed message-bus event table
+```
+
+The `BusEventMonitor` computer needs internet access only to load OpenStreetMap tiles. The actual bus positions are not simulated by the map provider; they come from the dataset coordinates emitted by `SpeedPartitionWorker` processes. Each bus marker animates toward the newest coordinate and keeps a short movement trail.
+
+Visualization does not block ICE request processing.
 
 ## Anti-Patterns Avoided
 

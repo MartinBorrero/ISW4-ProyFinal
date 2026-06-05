@@ -78,7 +78,7 @@ bash v3-distributed/start-visualization.sh <VISUALIZATION_IP>
 Worker computer:
 
 ```bash
-bash v3-distributed/start-worker.sh worker-<N> <PORT> <MASTER_IP> <WORKER_IP>
+bash v3-distributed/start-worker.sh worker-<N> <PORT> <MASTER_IP> <WORKER_IP> <VISUALIZATION_IP>
 ```
 
 Coordination computer:
@@ -109,6 +109,17 @@ doc/Especificacion-Despliegue-V3.docx
 - Master-Worker: `master/MasterI.java`, `worker/WorkerServer.java`, `worker/WorkerI.java`.
 - Pipe-and-filter: prepartition, dispatch, worker calculation, reduce, export.
 - Event-driven visualization: `visualization/VisualizationI.java`, diagram name `BusEventMonitor`.
+
+## Graphical Bus Visualization
+
+`BusEventMonitor` opens a Swing GUI with two real-time sections:
+
+- A real Cali map panel using OpenStreetMap tiles. It plots sampled SITM-MIO bus positions using latitude and longitude from the datagram partitions processed by workers.
+- A message-bus event table showing `Client -> Broker -> Master -> Worker` events with source, destination, type, timestamp and detail.
+
+Workers publish `BUS_POSITION` events asynchronously while reading their assigned partition. This keeps the map live without blocking the distributed calculation pipeline.
+
+The map animates each bus toward its latest reported coordinate and draws a short movement trail. OpenStreetMap tiles require internet access on the `BusEventMonitor` computer; if tiles cannot be loaded, events and bus positions still continue to be processed.
 
 ## Correctness Rule
 

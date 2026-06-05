@@ -6,12 +6,15 @@ import sitmmio.v3.slice.SpeedTask;
 import sitmmio.v3.slice.Worker;
 
 import com.zeroc.Ice.Current;
+import sitmmio.v3.slice.BusEvent;
+import sitmmio.v3.slice.VisualizationPrx;
 
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
@@ -22,6 +25,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -31,16 +36,25 @@ public class WorkerI implements Worker {
     private static final double EARTH_RADIUS_KM = 6371.0;
     private static final double MAX_SPEED_KMH = 80.0;
     private static final double TO_RAD = Math.PI / 180.0;
+    private static final int POSITION_EVENT_INTERVAL = 2_000;
+    private static final int MAX_POSITION_EVENTS_PER_TASK = 750;
 
     private final String workerId;
+    private final VisualizationPrx visualization;
+    private final ExecutorService eventExecutor = Executors.newSingleThreadExecutor();
 
-    public WorkerI(String workerId) {
+    public WorkerI(String workerId, VisualizationPrx visualization) {
         this.workerId = workerId;
+        this.visualization = visualization;
     }
 
     @Override
     public String workerId(Current current) {
         return workerId;
+    }
+
+    public void shutdown() {
+        eventExecutor.shutdownNow();
     }
 
     @Override
@@ -79,6 +93,7 @@ public class WorkerI implements Worker {
     private Map<String, List<DatagramPoint>> loadPartition(SpeedTask task, Set<Integer> activeRoutes) throws Exception {
         Map<String, List<DatagramPoint>> grouped = new HashMap<>();
         int acceptedRows = 0;
+        int publishedPositions = 0;
         int partitionCount = Math.max(1, task.partitionCount);
         int partitionIndex = Math.max(0, task.partitionIndex);
         Path inputPath = resolvePartitionInput(task.datagramsPath, partitionIndex);
@@ -110,6 +125,10 @@ public class WorkerI implements Worker {
                 LocalDateTime date = LocalDateTime.parse(parts[10], FORMATTER);
                 double latitude = Long.parseLong(parts[4]) / 1e7;
                 double longitude = Long.parseLong(parts[5]) / 1e7;
+                if (acceptedRows % POSITION_EVENT_INTERVAL == 0 && publishedPositions < MAX_POSITION_EVENTS_PER_TASK) {
+                    publishedPositions++;
+                    publishPosition(busId, lineId, latitude, longitude, date);
+                }
                 grouped.computeIfAbsent(groupKey, ignored -> new ArrayList<>())
                         .add(new DatagramPoint(lineId, busId, date, latitude, longitude));
             }
@@ -174,6 +193,26 @@ public class WorkerI implements Worker {
             }
         }
         return true;
+    }
+
+    private void publishPosition(int busId, int lineId, double latitude, double longitude, LocalDateTime date) {
+        if (visualization == null) {
+            return;
+        }
+        String detail = "worker=" + workerId
+                + ";busId=" + busId
+                + ";lineId=" + lineId
+                + ";lat=" + latitude
+                + ";lon=" + longitude
+                + ";date=" + date;
+        BusEvent event = new BusEvent(workerId, "BusEventMonitor", "BUS_POSITION", Instant.now().toString(), detail);
+        eventExecutor.submit(() -> {
+            try {
+                visualization.publish(event);
+            } catch (RuntimeException e) {
+                LOGGER.log(Level.FINE, "Could not publish bus position event", e);
+            }
+        });
     }
 
     private long elapsedMs(long startNanos) {

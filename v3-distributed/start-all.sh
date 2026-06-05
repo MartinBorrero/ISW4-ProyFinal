@@ -12,7 +12,7 @@ bash v3-distributed/start-visualization.sh 127.0.0.1 &
 sleep 2
 for i in $(seq 1 "$WORKERS"); do
   port=$((10010 + i))
-  bash v3-distributed/start-worker.sh "worker-${i}" "$port" 127.0.0.1 127.0.0.1 &
+  bash v3-distributed/start-worker.sh "worker-${i}" "$port" 127.0.0.1 127.0.0.1 127.0.0.1 &
 done
 sleep 3
 bash v3-distributed/start-master.sh 127.0.0.1 127.0.0.1 &
