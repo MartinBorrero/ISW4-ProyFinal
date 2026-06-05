@@ -1,0 +1,7 @@
+plugins {
+    id 'java-library'
+}
+
+dependencies {
+    api 'com.zeroc:ice:3.7.6'
+}

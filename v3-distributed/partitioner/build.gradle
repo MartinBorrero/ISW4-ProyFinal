@@ -1,0 +1,7 @@
+plugins {
+    id 'application'
+}
+
+application {
+    mainClass = 'co.icesi.project.v3.partitioner.DatagramPartitionerApp'
+}

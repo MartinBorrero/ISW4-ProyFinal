@@ -1,0 +1,12 @@
+plugins {
+    id 'application'
+}
+
+dependencies {
+    implementation project(':v3-distributed:slice')
+    implementation 'com.zeroc:ice:3.7.6'
+}
+
+application {
+    mainClass = 'co.icesi.project.v3.visualization.VisualizationServer'
+}
