@@ -66,7 +66,8 @@ public class MasterI implements Master {
         List<CompletableFuture<SpeedResult>> futures = new ArrayList<>();
 
         for (int i = 0; i < totalPartitions; i++) {
-            Map.Entry<String, WorkerPrx> entry = snapshot.get(i % snapshot.size());
+            String workerId = "worker-" + (i + 1);
+            WorkerPrx worker = workers.get(workerId);
             SpeedTask partitionTask = new SpeedTask(
                     task.taskId + "-p" + i,
                     task.datagramsPath,
@@ -75,8 +76,15 @@ public class MasterI implements Master {
                     task.maxRows,
                     i,
                     totalPartitions);
-            publish("Master", entry.getKey(), "TASK_DISPATCH", partitionTask.taskId);
-            futures.add(CompletableFuture.supplyAsync(() -> callWorker(entry.getKey(), entry.getValue(), partitionTask), taskExecutor));
+            if (worker == null) {
+                publish("Master", workerId, "TASK_REJECTED", partitionTask.taskId + " has no registered " + workerId);
+                futures.add(CompletableFuture.completedFuture(new SpeedResult(partitionTask.taskId, false,
+                        workerId + " is not registered; fixed partition assignment requires worker-" + (i + 1),
+                        task.outputPath, 0, 0, new SpeedStat[0])));
+                continue;
+            }
+            publish("Master", workerId, "TASK_DISPATCH", partitionTask.taskId);
+            futures.add(CompletableFuture.supplyAsync(() -> callWorker(workerId, worker, partitionTask), taskExecutor));
         }
 
         Map<String, Aggregate> aggregates = new ConcurrentHashMap<>();

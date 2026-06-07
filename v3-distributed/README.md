@@ -94,6 +94,42 @@ Client computer:
 bash v3-distributed/start-client.sh <BROKER_IP> <PARTITION_COUNT> data/partitions-<PARTITION_COUNT>
 ```
 
+## More Automated Multi-Computer Deployment
+
+Create one deployment file:
+
+```bash
+cp v3-distributed/deploy.env.example v3-distributed/deploy.env
+```
+
+Edit `v3-distributed/deploy.env` with the real IPs and SSH user.
+
+Generate and copy the partition data to every worker:
+
+```bash
+bash v3-distributed/distribute-data.sh
+```
+
+Start each node using the same central config:
+
+```bash
+# PC 1
+bash v3-distributed/start-node.sh visualization
+
+# PC 2
+bash v3-distributed/start-node.sh coordination
+
+# Worker PCs
+bash v3-distributed/start-node.sh worker 1
+bash v3-distributed/start-node.sh worker 2
+bash v3-distributed/start-node.sh worker 3
+
+# PC 1, after workers/master/broker are ready
+bash v3-distributed/start-node.sh client
+```
+
+The old `config/workerN.cfg` files are local examples only. For deployment, prefer `start-node.sh` because it generates the worker endpoint from `deploy.env`.
+
 ## Detailed Deployment Document
 
 See:
