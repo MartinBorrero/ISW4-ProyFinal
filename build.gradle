@@ -31,4 +31,10 @@ subprojects {
     repositories {
         mavenCentral()
     }
+
+    plugins.withType(JavaPlugin) {
+        tasks.withType(JavaCompile).configureEach {
+            options.release = 11
+        }
+    }
 }
