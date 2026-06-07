@@ -19,7 +19,7 @@ fi
 
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "Missing deployment env file: $ENV_FILE"
-  echo "Create it from: cp v3-distributed/deploy.env.example v3-distributed/deploy.env"
+  echo "Create v3-distributed/deploy.env with the IPs and remote path for the lab."
   exit 1
 fi
 

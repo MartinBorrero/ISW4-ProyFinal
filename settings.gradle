@@ -1,4 +1,4 @@
-rootProject.name = 'ISW4-ProyectoFinal-V1'
+rootProject.name = 'ISW4-ProyectoFinal-V3'
 
 include 'v3-distributed:slice'
 include 'v3-distributed:broker'
@@ -7,4 +7,3 @@ include 'v3-distributed:worker'
 include 'v3-distributed:client'
 include 'v3-distributed:visualization'
 include 'v3-distributed:partitioner'
-

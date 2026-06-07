@@ -1,168 +1,67 @@
-# SITM-MIO Version 3 Distributed ICE
+﻿# SITM-MIO V3 Distributed ICE
 
-This folder contains the distributed implementation of the SITM-MIO average-speed calculation pipeline for Linux deployment.
+Implementacion distribuida de la version 3.
 
-## Distributed Component Names
+## Componentes
 
-Use these names in UML deployment diagrams:
+- `visualization`: monitor de eventos y mapa.
+- `client`: envia la tarea al broker.
+- `broker`: punto de entrada del cliente.
+- `master`: registra workers, asigna particiones y reduce resultados.
+- `worker`: procesa una particion.
+- `partitioner`: genera `data/partitions-N` desde `data/datagrams4Pilot.csv`.
+- `slice`: contratos ICE compartidos.
 
-| Technical name | Diagram name |
-|---|---|
-| Client | AnalystClient |
-| Visualization | BusEventMonitor |
-| Broker | SpeedCalculationBroker |
-| Master | SpeedCalculationMaster |
-| Worker | SpeedPartitionWorker |
-| Partitioner | DatagramPartitioner |
-| Partition files | PartitionedDatagramStore |
-| Output CSV | SpeedResultsStore |
+## Compilar
 
-The code keeps `Broker`, `Master` and `Worker` names so the architectural patterns remain directly recognizable.
+```bash
+./gradlew :v3-distributed:visualization:installDist :v3-distributed:client:installDist :v3-distributed:master:installDist :v3-distributed:broker:installDist :v3-distributed:worker:installDist :v3-distributed:partitioner:installDist
+```
 
-## Flexible Deployment
+## Despliegue Actual
 
-Choose the number of processing nodes `N`, prepartition into `N` files, and start `N` workers.
+La configuracion esta en:
 
 ```text
-Total computers = N workers + 2
-PC 1: AnalystClient + BusEventMonitor
-PC 2: SpeedCalculationBroker + SpeedCalculationMaster
-PC 3..PC(N+2): SpeedPartitionWorkers
+v3-distributed/deploy.env
 ```
 
-Recommended experiment sizes:
+Desde Windows PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\v3-distributed\deploy-runtime-files.ps1
+```
+
+El datagrama grande debe estar previamente en PC2:
 
 ```text
-N=2  -> 4 computers
-N=4  -> 6 computers
-N=8  -> 10 computers, recommended
-N=12 -> 14 computers
+/home/swarch/Documents/JCMMJ/data/datagrams4Pilot.csv
 ```
 
-## Build
+El script copia ejecutables, genera particiones en PC2 y distribuye cada particion al worker correspondiente.
+
+## Arranque
+
+PC1:
 
 ```bash
-./gradlew build
-```
-
-## Prepartition
-
-```bash
-bash v3-distributed/prepartition.sh 8
-bash v3-distributed/prepartition.sh 12
-bash v3-distributed/prepartition.sh 8 1000000
-```
-
-Output:
-
-```text
-data/partitions-N/partition-0.csv
-...
-data/partitions-N/partition-(N-1).csv
-```
-
-## Start Local Demo
-
-```bash
-bash v3-distributed/start-all.sh 8
-```
-
-## Start Multi-Computer Deployment
-
-Visualization computer:
-
-```bash
-bash v3-distributed/start-visualization.sh <VISUALIZATION_IP>
-```
-
-Worker computer:
-
-```bash
-bash v3-distributed/start-worker.sh worker-<N> <PORT> <MASTER_IP> <WORKER_IP> <VISUALIZATION_IP>
-```
-
-Coordination computer:
-
-```bash
-bash v3-distributed/start-master.sh <MASTER_IP> <VISUALIZATION_IP>
-bash v3-distributed/start-broker.sh <BROKER_IP> <MASTER_IP> <VISUALIZATION_IP>
-```
-
-Client computer:
-
-```bash
-bash v3-distributed/start-client.sh <BROKER_IP> <PARTITION_COUNT> data/partitions-<PARTITION_COUNT>
-```
-
-## More Automated Multi-Computer Deployment
-
-Create one deployment file:
-
-```bash
-cp v3-distributed/deploy.env.example v3-distributed/deploy.env
-```
-
-Edit `v3-distributed/deploy.env` with the real IPs and SSH user.
-
-Generate and copy the partition data to every worker:
-
-```bash
-bash v3-distributed/distribute-data.sh
-```
-
-Start each node using the same central config:
-
-```bash
-# PC 1
 bash v3-distributed/start-node.sh visualization
+```
 
-# PC 2
+Workers:
+
+```bash
+bash v3-distributed/start-node.sh worker <numero>
+```
+
+PC2:
+
+```bash
 bash v3-distributed/start-node.sh coordination
+```
 
-# Worker PCs
-bash v3-distributed/start-node.sh worker 1
-bash v3-distributed/start-node.sh worker 2
-bash v3-distributed/start-node.sh worker 3
+PC1:
 
-# PC 1, after workers/master/broker are ready
+```bash
 bash v3-distributed/start-node.sh client
 ```
-
-The old `config/workerN.cfg` files are local examples only. For deployment, prefer `start-node.sh` because it generates the worker endpoint from `deploy.env`.
-
-## Detailed Deployment Document
-
-See:
-
-```text
-v3-distributed/DEPLOYMENT_NOTES.md
-doc/Especificacion-Despliegue-V3.docx
-```
-
-## Patterns
-
-- Broker: `broker/BrokerI.java`, diagram name `SpeedCalculationBroker`.
-- Master-Worker: `master/MasterI.java`, `worker/WorkerServer.java`, `worker/WorkerI.java`.
-- Pipe-and-filter: prepartition, dispatch, worker calculation, reduce, export.
-- Event-driven visualization: `visualization/VisualizationI.java`, diagram name `BusEventMonitor`.
-
-## Graphical Bus Visualization
-
-`BusEventMonitor` opens a Swing GUI with two real-time sections:
-
-- A real Cali map panel using OpenStreetMap tiles. It plots sampled SITM-MIO bus positions using latitude and longitude from the datagram partitions processed by workers.
-- A message-bus event table showing `Client -> Broker -> Master -> Worker` events with source, destination, type, timestamp and detail.
-
-Workers publish `BUS_POSITION` events asynchronously while reading their assigned partition. This keeps the map live without blocking the distributed calculation pipeline.
-
-The map animates each bus toward its latest reported coordinate and draws a short movement trail. OpenStreetMap tiles require internet access on the `BusEventMonitor` computer; if tiles cannot be loaded, events and bus positions still continue to be processed.
-
-## Correctness Rule
-
-Partition by:
-
-```text
-busId|lineId
-```
-
-This keeps all consecutive GPS points of a bus-route pair in the same worker partition.
