@@ -8,6 +8,7 @@ VISUALIZATION_HOST="${5:-127.0.0.1}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 TMP_CFG="v3-distributed/config/runtime-${WORKER_ID}.cfg"
+mkdir -p "$(dirname "$TMP_CFG")"
 cat > "$TMP_CFG" <<CFG
 Worker.Id=${WORKER_ID}
 WorkerAdapter.Endpoints=tcp -h ${BIND_HOST} -p ${PORT}
