@@ -15,6 +15,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
@@ -63,8 +64,9 @@ public class WorkerI implements Worker {
         try {
             Set<Integer> activeRoutes = loadRoutes(task.routesPath);
             ProcessingSummary summary = processPartition(task, activeRoutes);
+            Map<String, Aggregate> monthlyAggregates = rollUpDailyToMonthly(summary.dailyAggregates);
             List<SpeedStat> stats = new ArrayList<>();
-            for (Aggregate aggregate : summary.aggregates.values()) {
+            for (Aggregate aggregate : monthlyAggregates.values()) {
                 stats.add(aggregate.toStat());
             }
             stats.sort(Comparator.comparingInt((SpeedStat s) -> s.lineId).thenComparing(s -> s.month));
@@ -91,7 +93,7 @@ public class WorkerI implements Worker {
 
     private ProcessingSummary processPartition(SpeedTask task, Set<Integer> activeRoutes) throws Exception {
         Map<String, DatagramPoint> lastPointByGroup = new HashMap<>();
-        Map<String, Aggregate> aggregates = new HashMap<>();
+        Map<String, DailyAggregate> dailyAggregates = new HashMap<>();
         int acceptedRows = 0;
         int publishedPositions = 0;
         int partitionCount = Math.max(1, task.partitionCount);
@@ -142,11 +144,11 @@ public class WorkerI implements Worker {
                     continue;
                 }
 
-                addSpeedSample(aggregates, previous, current, seconds);
+                addSpeedSample(dailyAggregates, previous, current, seconds);
                 lastPointByGroup.put(groupKey, current);
             }
         }
-        return new ProcessingSummary(lastPointByGroup.size(), aggregates);
+        return new ProcessingSummary(lastPointByGroup.size(), dailyAggregates);
     }
 
     private Path resolvePartitionInput(String datagramsPath, int partitionIndex) {
@@ -157,7 +159,7 @@ public class WorkerI implements Worker {
         return path;
     }
 
-    private void addSpeedSample(Map<String, Aggregate> aggregates, DatagramPoint previous, DatagramPoint current, long seconds) {
+    private void addSpeedSample(Map<String, DailyAggregate> dailyAggregates, DatagramPoint previous, DatagramPoint current, long seconds) {
         double distanceKm = haversine(previous.latitude, previous.longitude, current.latitude, current.longitude);
         if (distanceKm <= 0) {
             return;
@@ -166,9 +168,20 @@ public class WorkerI implements Worker {
         if (speed > MAX_SPEED_KMH) {
             return;
         }
-        YearMonth month = YearMonth.from(current.date);
-        String key = current.lineId + "|" + month;
-        aggregates.computeIfAbsent(key, ignored -> new Aggregate(current.lineId, month.toString())).add(speed);
+        LocalDate day = current.date.toLocalDate();
+        String key = current.lineId + "|" + day;
+        dailyAggregates.computeIfAbsent(key, ignored -> new DailyAggregate(current.lineId, day)).add(speed);
+    }
+
+    private Map<String, Aggregate> rollUpDailyToMonthly(Map<String, DailyAggregate> dailyAggregates) {
+        Map<String, Aggregate> monthlyAggregates = new HashMap<>();
+        for (DailyAggregate daily : dailyAggregates.values()) {
+            YearMonth month = YearMonth.from(daily.day);
+            String key = daily.lineId + "|" + month;
+            monthlyAggregates.computeIfAbsent(key, ignored -> new Aggregate(daily.lineId, month.toString()))
+                    .add(daily.count, daily.sum);
+        }
+        return monthlyAggregates;
     }
 
     private double haversine(double lat1, double lon1, double lat2, double lon2) {
@@ -238,11 +251,28 @@ public class WorkerI implements Worker {
 
     private static final class ProcessingSummary {
         private final int groupCount;
-        private final Map<String, Aggregate> aggregates;
+        private final Map<String, DailyAggregate> dailyAggregates;
 
-        private ProcessingSummary(int groupCount, Map<String, Aggregate> aggregates) {
+        private ProcessingSummary(int groupCount, Map<String, DailyAggregate> dailyAggregates) {
             this.groupCount = groupCount;
-            this.aggregates = aggregates;
+            this.dailyAggregates = dailyAggregates;
+        }
+    }
+
+    private static final class DailyAggregate {
+        private final int lineId;
+        private final LocalDate day;
+        private long count;
+        private double sum;
+
+        private DailyAggregate(int lineId, LocalDate day) {
+            this.lineId = lineId;
+            this.day = day;
+        }
+
+        private void add(double speed) {
+            count++;
+            sum += speed;
         }
     }
 
@@ -260,6 +290,11 @@ public class WorkerI implements Worker {
         private void add(double speed) {
             count++;
             sum += speed;
+        }
+
+        private void add(long count, double sum) {
+            this.count += count;
+            this.sum += sum;
         }
 
         private SpeedStat toStat() {

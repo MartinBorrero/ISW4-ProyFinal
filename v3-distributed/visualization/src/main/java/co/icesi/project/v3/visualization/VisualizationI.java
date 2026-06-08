@@ -5,11 +5,14 @@ import sitmmio.v3.slice.BusEvent;
 import sitmmio.v3.slice.Visualization;
 
 import javax.swing.JFrame;
+import javax.swing.JButton;
+import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTable;
+import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.table.DefaultTableModel;
@@ -18,6 +21,7 @@ import java.awt.BasicStroke;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
+import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
@@ -28,8 +32,10 @@ import java.io.InputStream;
 import java.net.URL;
 import java.net.URLConnection;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -42,6 +48,9 @@ public class VisualizationI implements Visualization {
     private final DefaultTableModel tableModel;
     private final MapPanel mapPanel;
     private final JLabel statusLabel;
+    private final JComboBox<String> filterMode;
+    private final JTextField filterValue;
+    private final List<BusPosition> positionHistory;
     private final boolean guiEnabled;
 
     public VisualizationI() {
@@ -49,6 +58,9 @@ public class VisualizationI implements Visualization {
         this.tableModel = new DefaultTableModel(new Object[]{"Timestamp", "Source", "Destination", "Type", "Detail"}, 0);
         this.mapPanel = new MapPanel();
         this.statusLabel = new JLabel("Waiting for distributed bus events...");
+        this.filterMode = new JComboBox<>(new String[]{"All", "Day", "Month"});
+        this.filterValue = new JTextField(10);
+        this.positionHistory = new ArrayList<>();
         if (guiEnabled) {
             SwingUtilities.invokeLater(this::openWindow);
         } else {
@@ -68,9 +80,15 @@ public class VisualizationI implements Visualization {
                         event.detail
                 });
                 if ("BUS_POSITION".equals(event.messageType)) {
-                    mapPanel.updatePosition(parsePosition(event));
+                    BusPosition position = parsePosition(event);
+                    if (position != null) {
+                        positionHistory.add(position);
+                        if (matchesCurrentFilter(position)) {
+                            mapPanel.updatePosition(position);
+                        }
+                    }
                 }
-                statusLabel.setText("Events: " + tableModel.getRowCount() + " | Active buses on map: " + mapPanel.positionCount());
+                updateStatus();
             });
         }
         LOGGER.info(event.timestamp + " | " + event.source + " -> " + event.destination + " | " + event.messageType + " | " + event.detail);
@@ -83,13 +101,71 @@ public class VisualizationI implements Visualization {
         JScrollPane tableScroll = new JScrollPane(table);
         JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, mapPanel, tableScroll);
         splitPane.setResizeWeight(0.62);
+        JPanel topPanel = new JPanel(new BorderLayout());
+        topPanel.add(statusLabel, BorderLayout.NORTH);
+        topPanel.add(filterPanel(), BorderLayout.SOUTH);
         frame.setLayout(new BorderLayout());
-        frame.add(statusLabel, BorderLayout.NORTH);
+        frame.add(topPanel, BorderLayout.NORTH);
         frame.add(splitPane, BorderLayout.CENTER);
         frame.setSize(1120, 760);
         frame.setLocationRelativeTo(null);
         frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         frame.setVisible(true);
+    }
+
+    private JPanel filterPanel() {
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        JButton applyButton = new JButton("Apply filter");
+        JButton clearButton = new JButton("Clear");
+        filterValue.setToolTipText("Day: yyyy-MM-dd | Month: yyyy-MM");
+        applyButton.addActionListener(ignored -> applyCurrentFilter());
+        clearButton.addActionListener(ignored -> {
+            filterMode.setSelectedItem("All");
+            filterValue.setText("");
+            applyCurrentFilter();
+        });
+        panel.add(new JLabel("Map filter:"));
+        panel.add(filterMode);
+        panel.add(filterValue);
+        panel.add(new JLabel("Use yyyy-MM-dd for day or yyyy-MM for month"));
+        panel.add(applyButton);
+        panel.add(clearButton);
+        return panel;
+    }
+
+    private void applyCurrentFilter() {
+        mapPanel.clearPositions();
+        for (BusPosition position : positionHistory) {
+            if (matchesCurrentFilter(position)) {
+                mapPanel.updatePosition(position);
+            }
+        }
+        updateStatus();
+    }
+
+    private boolean matchesCurrentFilter(BusPosition position) {
+        String mode = String.valueOf(filterMode.getSelectedItem());
+        String value = filterValue.getText().trim();
+        if ("All".equals(mode) || value.isEmpty()) {
+            return true;
+        }
+        if ("Day".equals(mode)) {
+            return position.date.startsWith(value);
+        }
+        if ("Month".equals(mode)) {
+            return position.date.startsWith(value);
+        }
+        return true;
+    }
+
+    private void updateStatus() {
+        String mode = String.valueOf(filterMode.getSelectedItem());
+        String value = filterValue.getText().trim();
+        String filter = "All".equals(mode) || value.isEmpty() ? "all positions" : mode.toLowerCase() + "=" + value;
+        statusLabel.setText("Events: " + tableModel.getRowCount()
+                + " | BUS_POSITION received: " + positionHistory.size()
+                + " | Active buses on map: " + mapPanel.positionCount()
+                + " | Filter: " + filter);
     }
 
     private BusPosition parsePosition(BusEvent event) {
@@ -157,6 +233,11 @@ public class VisualizationI implements Visualization {
             }
             AnimatedBus bus = buses.computeIfAbsent(position.busId, ignored -> new AnimatedBus(position));
             bus.moveTo(position);
+            repaint();
+        }
+
+        private void clearPositions() {
+            buses.clear();
             repaint();
         }
 
