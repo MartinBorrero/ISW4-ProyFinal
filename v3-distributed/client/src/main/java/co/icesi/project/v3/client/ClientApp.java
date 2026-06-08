@@ -5,8 +5,14 @@ import com.zeroc.Ice.ObjectPrx;
 import com.zeroc.Ice.Util;
 import sitmmio.v3.slice.BrokerPrx;
 import sitmmio.v3.slice.SpeedResult;
+import sitmmio.v3.slice.SpeedStat;
 import sitmmio.v3.slice.SpeedTask;
 
+import java.io.BufferedWriter;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -43,7 +49,13 @@ public class ClientApp {
             System.out.println("ElapsedMs: " + result.elapsedMs);
             if (!result.success) {
                 status = 2;
+            } else {
+                writeCsv(outputPath, result.stats);
+                System.out.println("Local output written: " + outputPath);
             }
+        } catch (IOException e) {
+            status = 1;
+            LOGGER.log(Level.SEVERE, "Could not write client output CSV", e);
         } catch (RuntimeException e) {
             status = 1;
             LOGGER.log(Level.SEVERE, "Client request failed", e);
@@ -84,6 +96,25 @@ public class ClientApp {
         } catch (NumberFormatException e) {
             LOGGER.log(Level.WARNING, "Invalid integer config value: " + value, e);
             return fallback;
+        }
+    }
+
+    private static void writeCsv(String outputPath, SpeedStat[] stats) throws IOException {
+        Path path = Path.of(outputPath);
+        Path parent = path.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+        try (BufferedWriter writer = Files.newBufferedWriter(path)) {
+            writer.write("routeId,month,averageSpeed,count");
+            writer.newLine();
+            for (SpeedStat stat : stats) {
+                double average = stat.count == 0 ? 0.0 : stat.sum / stat.count;
+                writer.write(stat.lineId + "," + stat.month + ","
+                        + String.format(Locale.US, "%.4f", average) + ","
+                        + stat.count);
+                writer.newLine();
+            }
         }
     }
 }
