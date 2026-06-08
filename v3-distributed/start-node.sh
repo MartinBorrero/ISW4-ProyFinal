@@ -27,16 +27,24 @@ fi
 source "$ENV_FILE"
 
 PARTITIONS="${PARTITIONS:-${#WORKER_HOSTS[@]}}"
+BROKER_PORT="${BROKER_PORT:-10000}"
+MASTER_PORT="${MASTER_PORT:-10001}"
+VISUALIZATION_PORT="${VISUALIZATION_PORT:-10003}"
+WORKER_BASE_PORT="${WORKER_BASE_PORT:-10010}"
+MAX_ROWS="${MAX_ROWS:-0}"
+WORKER_HEAP="${WORKER_HEAP:-1024m}"
 
 case "$ROLE" in
   visualization)
-    bash v3-distributed/start-visualization.sh "${VISUALIZATION_HOST:?VISUALIZATION_HOST is required}"
+    bash v3-distributed/start-visualization.sh "${VISUALIZATION_HOST:?VISUALIZATION_HOST is required}" "$VISUALIZATION_PORT"
     ;;
 
   coordination)
-    bash v3-distributed/start-master.sh "${MASTER_HOST:?MASTER_HOST is required}" "${VISUALIZATION_HOST:?VISUALIZATION_HOST is required}" &
+    bash v3-distributed/start-master.sh "${MASTER_HOST:?MASTER_HOST is required}" "${VISUALIZATION_HOST:?VISUALIZATION_HOST is required}" "$MASTER_PORT" "$VISUALIZATION_PORT" &
+    master_pid=$!
+    trap 'kill "$master_pid" 2>/dev/null || true' EXIT INT TERM
     sleep 3
-    bash v3-distributed/start-broker.sh "${BROKER_HOST:?BROKER_HOST is required}" "$MASTER_HOST" "$VISUALIZATION_HOST"
+    bash v3-distributed/start-broker.sh "${BROKER_HOST:?BROKER_HOST is required}" "$MASTER_HOST" "$VISUALIZATION_HOST" "$BROKER_PORT" "$MASTER_PORT" "$VISUALIZATION_PORT"
     ;;
 
   worker)
@@ -49,13 +57,13 @@ case "$ROLE" in
       exit 1
     fi
     worker_host="${WORKER_HOSTS[$((WORKER_INDEX - 1))]}"
-    worker_port=$((10010 + WORKER_INDEX))
-    bash v3-distributed/start-worker.sh "worker-${WORKER_INDEX}" "$worker_port" "${MASTER_HOST:?MASTER_HOST is required}" "$worker_host" "${VISUALIZATION_HOST:?VISUALIZATION_HOST is required}"
+    worker_port=$((WORKER_BASE_PORT + WORKER_INDEX))
+    bash v3-distributed/start-worker.sh "worker-${WORKER_INDEX}" "$worker_port" "${MASTER_HOST:?MASTER_HOST is required}" "$worker_host" "${VISUALIZATION_HOST:?VISUALIZATION_HOST is required}" "$MASTER_PORT" "$VISUALIZATION_PORT" "$WORKER_HEAP"
     ;;
 
   client)
     client_datagrams_path="${CLIENT_DATAGRAMS_PATH:-data/partitions-${PARTITIONS}}"
-    bash v3-distributed/start-client.sh "${BROKER_HOST:?BROKER_HOST is required}" "$PARTITIONS" "$client_datagrams_path"
+    bash v3-distributed/start-client.sh "${BROKER_HOST:?BROKER_HOST is required}" "$PARTITIONS" "$client_datagrams_path" "$BROKER_PORT" "$MAX_ROWS"
     ;;
 
   *)

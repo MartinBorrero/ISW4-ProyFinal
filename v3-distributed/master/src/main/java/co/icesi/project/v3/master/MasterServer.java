@@ -1,6 +1,7 @@
 package co.icesi.project.v3.master;
 
 import com.zeroc.Ice.Communicator;
+import com.zeroc.Ice.LocalException;
 import com.zeroc.Ice.ObjectAdapter;
 import com.zeroc.Ice.ObjectPrx;
 import com.zeroc.Ice.Util;
@@ -56,8 +57,11 @@ public class MasterServer {
                 LOGGER.warning("Configured Visualization proxy is not a Visualization servant");
             }
             return proxy;
+        } catch (LocalException e) {
+            LOGGER.warning("Visualization is not reachable at " + proxyText + "; continuing without UI events");
+            return null;
         } catch (RuntimeException e) {
-            LOGGER.log(Level.WARNING, "Visualization is not reachable; continuing without UI events", e);
+            LOGGER.log(Level.WARNING, "Could not resolve Visualization proxy; continuing without UI events", e);
             return null;
         }
     }

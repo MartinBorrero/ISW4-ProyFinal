@@ -1,6 +1,7 @@
 package co.icesi.project.v3.broker;
 
 import com.zeroc.Ice.Communicator;
+import com.zeroc.Ice.LocalException;
 import com.zeroc.Ice.ObjectAdapter;
 import com.zeroc.Ice.ObjectPrx;
 import com.zeroc.Ice.Util;
@@ -46,6 +47,7 @@ public class BrokerServer {
     }
 
     private static MasterPrx resolveMaster(Communicator communicator) {
+        String proxyText = communicator.getProperties().getProperty("Master.Proxy");
         try {
             ObjectPrx base = communicator.propertyToProxy("Master.Proxy");
             MasterPrx proxy = MasterPrx.checkedCast(base);
@@ -53,15 +55,18 @@ public class BrokerServer {
                 LOGGER.warning("Configured Master proxy is not a Master servant");
             }
             return proxy;
+        } catch (LocalException e) {
+            LOGGER.severe("Master proxy is not reachable at " + proxyText);
+            return null;
         } catch (RuntimeException e) {
-            LOGGER.log(Level.SEVERE, "Master proxy is not reachable", e);
+            LOGGER.log(Level.SEVERE, "Could not resolve Master proxy", e);
             return null;
         }
     }
 
     private static VisualizationPrx resolveVisualization(Communicator communicator) {
+        String proxyText = communicator.getProperties().getProperty("Visualization.Proxy");
         try {
-            String proxyText = communicator.getProperties().getProperty("Visualization.Proxy");
             if (proxyText == null || proxyText.isBlank()) {
                 return null;
             }
@@ -71,8 +76,11 @@ public class BrokerServer {
                 LOGGER.warning("Configured Visualization proxy is not a Visualization servant");
             }
             return proxy;
+        } catch (LocalException e) {
+            LOGGER.warning("Visualization is not reachable at " + proxyText + "; continuing without UI events");
+            return null;
         } catch (RuntimeException e) {
-            LOGGER.log(Level.WARNING, "Visualization is not reachable; continuing without UI events", e);
+            LOGGER.log(Level.WARNING, "Could not resolve Visualization proxy; continuing without UI events", e);
             return null;
         }
     }

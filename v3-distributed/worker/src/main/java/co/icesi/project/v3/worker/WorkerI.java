@@ -62,14 +62,13 @@ public class WorkerI implements Worker {
         long start = System.nanoTime();
         try {
             Set<Integer> activeRoutes = loadRoutes(task.routesPath);
-            Map<String, List<DatagramPoint>> grouped = loadPartition(task, activeRoutes);
-            Map<String, Aggregate> aggregates = calculate(grouped);
+            ProcessingSummary summary = processPartition(task, activeRoutes);
             List<SpeedStat> stats = new ArrayList<>();
-            for (Aggregate aggregate : aggregates.values()) {
+            for (Aggregate aggregate : summary.aggregates.values()) {
                 stats.add(aggregate.toStat());
             }
             stats.sort(Comparator.comparingInt((SpeedStat s) -> s.lineId).thenComparing(s -> s.month));
-            return new SpeedResult(task.taskId, true, workerId + " processed " + grouped.size() + " bus-route groups", task.outputPath, stats.size(), elapsedMs(start), stats.toArray(new SpeedStat[0]));
+            return new SpeedResult(task.taskId, true, workerId + " processed " + summary.groupCount + " bus-route groups", task.outputPath, stats.size(), elapsedMs(start), stats.toArray(new SpeedStat[0]));
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, workerId + " could not process task " + task.taskId, e);
             return new SpeedResult(task.taskId, false, e.getMessage(), task.outputPath, 0, elapsedMs(start), new SpeedStat[0]);
@@ -90,8 +89,9 @@ public class WorkerI implements Worker {
         return routes;
     }
 
-    private Map<String, List<DatagramPoint>> loadPartition(SpeedTask task, Set<Integer> activeRoutes) throws Exception {
-        Map<String, List<DatagramPoint>> grouped = new HashMap<>();
+    private ProcessingSummary processPartition(SpeedTask task, Set<Integer> activeRoutes) throws Exception {
+        Map<String, DatagramPoint> lastPointByGroup = new HashMap<>();
+        Map<String, Aggregate> aggregates = new HashMap<>();
         int acceptedRows = 0;
         int publishedPositions = 0;
         int partitionCount = Math.max(1, task.partitionCount);
@@ -129,11 +129,24 @@ public class WorkerI implements Worker {
                     publishedPositions++;
                     publishPosition(busId, lineId, latitude, longitude, date);
                 }
-                grouped.computeIfAbsent(groupKey, ignored -> new ArrayList<>())
-                        .add(new DatagramPoint(lineId, busId, date, latitude, longitude));
+
+                DatagramPoint current = new DatagramPoint(lineId, date, latitude, longitude);
+                DatagramPoint previous = lastPointByGroup.get(groupKey);
+                if (previous == null) {
+                    lastPointByGroup.put(groupKey, current);
+                    continue;
+                }
+
+                long seconds = Duration.between(previous.date, current.date).getSeconds();
+                if (seconds <= 0) {
+                    continue;
+                }
+
+                addSpeedSample(aggregates, previous, current, seconds);
+                lastPointByGroup.put(groupKey, current);
             }
         }
-        return grouped;
+        return new ProcessingSummary(lastPointByGroup.size(), aggregates);
     }
 
     private Path resolvePartitionInput(String datagramsPath, int partitionIndex) {
@@ -144,28 +157,18 @@ public class WorkerI implements Worker {
         return path;
     }
 
-    private Map<String, Aggregate> calculate(Map<String, List<DatagramPoint>> grouped) {
-        Map<String, Aggregate> aggregates = new HashMap<>();
-        for (List<DatagramPoint> points : grouped.values()) {
-            points.sort(Comparator.comparing(point -> point.date));
-            for (int i = 1; i < points.size(); i++) {
-                DatagramPoint previous = points.get(i - 1);
-                DatagramPoint current = points.get(i);
-                long seconds = Duration.between(previous.date, current.date).getSeconds();
-                double distanceKm = haversine(previous.latitude, previous.longitude, current.latitude, current.longitude);
-                if (seconds <= 0 || distanceKm <= 0) {
-                    continue;
-                }
-                double speed = distanceKm / (seconds / 3600.0);
-                if (speed > MAX_SPEED_KMH) {
-                    continue;
-                }
-                YearMonth month = YearMonth.from(current.date);
-                String key = current.lineId + "|" + month;
-                aggregates.computeIfAbsent(key, ignored -> new Aggregate(current.lineId, month.toString())).add(speed);
-            }
+    private void addSpeedSample(Map<String, Aggregate> aggregates, DatagramPoint previous, DatagramPoint current, long seconds) {
+        double distanceKm = haversine(previous.latitude, previous.longitude, current.latitude, current.longitude);
+        if (distanceKm <= 0) {
+            return;
         }
-        return aggregates;
+        double speed = distanceKm / (seconds / 3600.0);
+        if (speed > MAX_SPEED_KMH) {
+            return;
+        }
+        YearMonth month = YearMonth.from(current.date);
+        String key = current.lineId + "|" + month;
+        aggregates.computeIfAbsent(key, ignored -> new Aggregate(current.lineId, month.toString())).add(speed);
     }
 
     private double haversine(double lat1, double lon1, double lat2, double lon2) {
@@ -221,17 +224,25 @@ public class WorkerI implements Worker {
 
     private static final class DatagramPoint {
         private final int lineId;
-        private final int busId;
         private final LocalDateTime date;
         private final double latitude;
         private final double longitude;
 
-        private DatagramPoint(int lineId, int busId, LocalDateTime date, double latitude, double longitude) {
+        private DatagramPoint(int lineId, LocalDateTime date, double latitude, double longitude) {
             this.lineId = lineId;
-            this.busId = busId;
             this.date = date;
             this.latitude = latitude;
             this.longitude = longitude;
+        }
+    }
+
+    private static final class ProcessingSummary {
+        private final int groupCount;
+        private final Map<String, Aggregate> aggregates;
+
+        private ProcessingSummary(int groupCount, Map<String, Aggregate> aggregates) {
+            this.groupCount = groupCount;
+            this.aggregates = aggregates;
         }
     }
 

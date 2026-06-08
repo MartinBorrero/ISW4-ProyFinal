@@ -68,6 +68,19 @@ powershell -ExecutionPolicy Bypass -File .\v3-distributed\deploy-runtime-files.p
 
 El script compila los componentes, copia los ejecutables a los equipos configurados, genera particiones en el equipo master y distribuye las particiones por la red interna.
 
+## Puertos
+
+Los puertos se configuran en `v3-distributed/deploy.env`.
+
+```text
+BROKER_PORT=11000
+MASTER_PORT=11001
+VISUALIZATION_PORT=11003
+WORKER_BASE_PORT=11010
+```
+
+Cada worker usa `WORKER_BASE_PORT + numero_worker`; por ejemplo, worker 1 usa `11011`.
+
 ## Arranque
 
 Visualizacion:

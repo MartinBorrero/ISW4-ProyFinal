@@ -40,6 +40,19 @@ El datagrama grande debe estar previamente en PC2:
 
 El script copia ejecutables, genera particiones en PC2 y distribuye cada particion al worker correspondiente.
 
+## Puertos
+
+El despliegue usa estos puertos en `deploy.env`:
+
+```text
+BROKER_PORT=11000
+MASTER_PORT=11001
+VISUALIZATION_PORT=11003
+WORKER_BASE_PORT=11010
+```
+
+Los workers usan `WORKER_BASE_PORT + numero_worker`.
+
 ## Arranque
 
 PC1:

@@ -13,6 +13,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -24,6 +25,7 @@ public class WorkerServer {
         Communicator communicator = null;
         ScheduledExecutorService registrationExecutor = Executors.newSingleThreadScheduledExecutor();
         AtomicBoolean registered = new AtomicBoolean(false);
+        AtomicInteger registrationAttempts = new AtomicInteger(0);
         try {
             communicator = Util.initialize(args);
             String configuredId = communicator.getProperties().getProperty("Worker.Id");
@@ -48,7 +50,12 @@ public class WorkerServer {
                         LOGGER.info(workerId + " registered with Master");
                     }
                 } catch (RuntimeException e) {
-                    LOGGER.log(Level.INFO, workerId + " waiting for Master registration endpoint", e);
+                    int attempt = registrationAttempts.incrementAndGet();
+                    if (attempt == 1 || attempt % 10 == 0) {
+                        LOGGER.info(workerId + " waiting for Master at "
+                                + finalCommunicator.getProperties().getProperty("Master.Proxy")
+                                + " (attempt " + attempt + ")");
+                    }
                 }
             };
             registrationExecutor.scheduleWithFixedDelay(register, 0, 2, TimeUnit.SECONDS);
