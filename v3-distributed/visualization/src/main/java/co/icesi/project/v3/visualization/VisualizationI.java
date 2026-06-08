@@ -12,7 +12,6 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTable;
-import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.table.DefaultTableModel;
@@ -37,6 +36,7 @@ import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -49,8 +49,12 @@ public class VisualizationI implements Visualization {
     private final MapPanel mapPanel;
     private final JLabel statusLabel;
     private final JComboBox<String> filterMode;
-    private final JTextField filterValue;
+    private final JComboBox<String> filterValue;
+    private final JComboBox<String> renderLimit;
     private final List<BusPosition> positionHistory;
+    private final TreeSet<String> observedDays;
+    private final TreeSet<String> observedMonths;
+    private boolean mapFilterApplied;
     private final boolean guiEnabled;
 
     public VisualizationI() {
@@ -59,8 +63,14 @@ public class VisualizationI implements Visualization {
         this.mapPanel = new MapPanel();
         this.statusLabel = new JLabel("Waiting for distributed bus events...");
         this.filterMode = new JComboBox<>(new String[]{"All", "Day", "Month"});
-        this.filterValue = new JTextField(10);
+        this.filterValue = new JComboBox<>();
+        this.filterValue.setEditable(true);
+        this.renderLimit = new JComboBox<>(new String[]{"25", "50", "100", "200"});
+        this.renderLimit.setSelectedItem("50");
         this.positionHistory = new ArrayList<>();
+        this.observedDays = new TreeSet<>();
+        this.observedMonths = new TreeSet<>();
+        this.mapFilterApplied = false;
         if (guiEnabled) {
             SwingUtilities.invokeLater(this::openWindow);
         } else {
@@ -83,8 +93,9 @@ public class VisualizationI implements Visualization {
                     BusPosition position = parsePosition(event);
                     if (position != null) {
                         positionHistory.add(position);
-                        if (matchesCurrentFilter(position)) {
-                            mapPanel.updatePosition(position);
+                        registerObservedDate(position);
+                        if (mapFilterApplied && matchesCurrentFilter(position)) {
+                            mapPanel.updatePosition(position, selectedRenderLimit());
                         }
                     }
                 }
@@ -117,35 +128,89 @@ public class VisualizationI implements Visualization {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         JButton applyButton = new JButton("Apply filter");
         JButton clearButton = new JButton("Clear");
-        filterValue.setToolTipText("Day: yyyy-MM-dd | Month: yyyy-MM");
+        filterMode.addActionListener(ignored -> refreshFilterValues());
+        filterValue.setToolTipText("Select an observed day/month or type yyyy-MM-dd / yyyy-MM");
         applyButton.addActionListener(ignored -> applyCurrentFilter());
         clearButton.addActionListener(ignored -> {
             filterMode.setSelectedItem("All");
-            filterValue.setText("");
-            applyCurrentFilter();
+            filterValue.setSelectedItem("");
+            mapFilterApplied = false;
+            mapPanel.clearPositions();
+            updateStatus();
         });
         panel.add(new JLabel("Map filter:"));
         panel.add(filterMode);
         panel.add(filterValue);
-        panel.add(new JLabel("Use yyyy-MM-dd for day or yyyy-MM for month"));
+        panel.add(new JLabel("Max buses:"));
+        panel.add(renderLimit);
+        panel.add(new JLabel("Select observed day/month, then apply"));
         panel.add(applyButton);
         panel.add(clearButton);
+        refreshFilterValues();
         return panel;
     }
 
     private void applyCurrentFilter() {
+        mapFilterApplied = true;
         mapPanel.clearPositions();
+        int limit = selectedRenderLimit();
+        int rendered = 0;
         for (BusPosition position : positionHistory) {
             if (matchesCurrentFilter(position)) {
-                mapPanel.updatePosition(position);
+                mapPanel.updatePosition(position, limit);
+                rendered++;
+                if (rendered >= limit) {
+                    break;
+                }
             }
         }
         updateStatus();
     }
 
+    private int selectedRenderLimit() {
+        Object selected = renderLimit.getSelectedItem();
+        if (selected == null) {
+            return 50;
+        }
+        try {
+            return Integer.parseInt(selected.toString());
+        } catch (NumberFormatException e) {
+            return 50;
+        }
+    }
+
+    private void registerObservedDate(BusPosition position) {
+        if (position.date.length() >= 10) {
+            observedDays.add(position.date.substring(0, 10));
+        }
+        if (position.date.length() >= 7) {
+            observedMonths.add(position.date.substring(0, 7));
+        }
+        refreshFilterValues();
+    }
+
+    private void refreshFilterValues() {
+        Object selected = filterValue.getSelectedItem();
+        String previous = selected == null ? "" : selected.toString();
+        String mode = String.valueOf(filterMode.getSelectedItem());
+        filterValue.removeAllItems();
+        filterValue.addItem("");
+        if ("Day".equals(mode)) {
+            for (String day : observedDays) {
+                filterValue.addItem(day);
+            }
+        } else if ("Month".equals(mode)) {
+            for (String month : observedMonths) {
+                filterValue.addItem(month);
+            }
+        }
+        filterValue.setSelectedItem(previous);
+    }
+
     private boolean matchesCurrentFilter(BusPosition position) {
         String mode = String.valueOf(filterMode.getSelectedItem());
-        String value = filterValue.getText().trim();
+        Object selected = filterValue.getSelectedItem();
+        String value = selected == null ? "" : selected.toString().trim();
         if ("All".equals(mode) || value.isEmpty()) {
             return true;
         }
@@ -160,12 +225,14 @@ public class VisualizationI implements Visualization {
 
     private void updateStatus() {
         String mode = String.valueOf(filterMode.getSelectedItem());
-        String value = filterValue.getText().trim();
-        String filter = "All".equals(mode) || value.isEmpty() ? "all positions" : mode.toLowerCase() + "=" + value;
+        Object selected = filterValue.getSelectedItem();
+        String value = selected == null ? "" : selected.toString().trim();
+        String filter = !mapFilterApplied ? "not applied" : ("All".equals(mode) || value.isEmpty() ? "all positions" : mode.toLowerCase() + "=" + value);
         statusLabel.setText("Events: " + tableModel.getRowCount()
                 + " | BUS_POSITION received: " + positionHistory.size()
                 + " | Active buses on map: " + mapPanel.positionCount()
-                + " | Filter: " + filter);
+                + " | Filter: " + filter
+                + " | Max buses: " + selectedRenderLimit());
     }
 
     private BusPosition parsePosition(BusEvent event) {
@@ -227,8 +294,11 @@ public class VisualizationI implements Visualization {
             new Timer(40, ignored -> animate()).start();
         }
 
-        private void updatePosition(BusPosition position) {
+        private void updatePosition(BusPosition position, int maxBuses) {
             if (position == null || position.busId < 0 || position.latitude == 0 || position.longitude == 0) {
+                return;
+            }
+            if (!buses.containsKey(position.busId) && buses.size() >= maxBuses) {
                 return;
             }
             AnimatedBus bus = buses.computeIfAbsent(position.busId, ignored -> new AnimatedBus(position));
