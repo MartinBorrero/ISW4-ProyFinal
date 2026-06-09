@@ -6,7 +6,6 @@ cd "$ROOT"
 
 ROLE="${1:-}"
 WORKER_INDEX="${2:-}"
-ENV_FILE="${DEPLOY_ENV:-v3-distributed/deploy.env}"
 
 if [[ -z "$ROLE" ]]; then
   echo "Usage:"
@@ -17,16 +16,31 @@ if [[ -z "$ROLE" ]]; then
   exit 1
 fi
 
+if [[ "$ROLE" == "client" ]]; then
+  ENV_FILE="${CLIENT_ENV:-${DEPLOY_ENV:-v3-distributed/client.env}}"
+  if [[ ! -f "$ENV_FILE" && -z "${CLIENT_ENV:-}" && -z "${DEPLOY_ENV:-}" ]]; then
+    ENV_FILE="v3-distributed/deploy.env"
+  fi
+else
+  ENV_FILE="${DEPLOY_ENV:-v3-distributed/deploy.env}"
+fi
+
 if [[ ! -f "$ENV_FILE" ]]; then
-  echo "Missing deployment env file: $ENV_FILE"
-  echo "Create v3-distributed/deploy.env with the IPs and remote path for the lab."
+  echo "Missing env file: $ENV_FILE"
+  echo "Create v3-distributed/client.env for the client role or v3-distributed/deploy.env for deployment roles."
   exit 1
 fi
 
 # shellcheck source=/dev/null
 source "$ENV_FILE"
 
-PARTITIONS="${PARTITIONS:-${#WORKER_HOSTS[@]}}"
+if [[ -z "${PARTITIONS:-}" ]]; then
+  if declare -p WORKER_HOSTS >/dev/null 2>&1; then
+    PARTITIONS="${#WORKER_HOSTS[@]}"
+  else
+    PARTITIONS=1
+  fi
+fi
 BROKER_PORT="${BROKER_PORT:-10000}"
 MASTER_PORT="${MASTER_PORT:-10001}"
 VISUALIZATION_PORT="${VISUALIZATION_PORT:-10003}"
@@ -63,7 +77,8 @@ case "$ROLE" in
 
   client)
     client_datagrams_path="${CLIENT_DATAGRAMS_PATH:-data/partitions-${PARTITIONS}}"
-    bash v3-distributed/start-client.sh "${BROKER_HOST:?BROKER_HOST is required}" "$PARTITIONS" "$client_datagrams_path" "$BROKER_PORT" "$MAX_ROWS"
+    client_output_path="${CLIENT_OUTPUT_PATH:-output/resultados-v3.csv}"
+    bash v3-distributed/start-client.sh "${BROKER_HOST:?BROKER_HOST is required}" "$PARTITIONS" "$client_datagrams_path" "$BROKER_PORT" "$MAX_ROWS" "$client_output_path"
     ;;
 
   *)

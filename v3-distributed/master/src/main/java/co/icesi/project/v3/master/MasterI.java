@@ -112,8 +112,7 @@ public class MasterI implements Master {
         try {
             writeCsv(task.outputPath, finalStats);
         } catch (IOException e) {
-            LOGGER.log(Level.SEVERE, "Could not write distributed output CSV", e);
-            return new SpeedResult(task.taskId, false, "Could not write output: " + e.getMessage(), task.outputPath, finalStats.size(), elapsedMs(start), finalStats.toArray(new SpeedStat[0]));
+            LOGGER.log(Level.WARNING, "Could not write master output CSV; returning stats to client", e);
         }
 
         publish("Master", "Broker", "TASK_DONE", task.taskId + " partitions=" + completedPartitions + "/" + totalPartitions + " records=" + finalStats.size());

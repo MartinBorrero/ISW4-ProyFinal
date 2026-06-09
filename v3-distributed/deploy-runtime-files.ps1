@@ -77,6 +77,31 @@ function Copy-ToRemoteChecked {
     throw "Command failed: $Description"
 }
 
+function Copy-FromRemoteChecked {
+    param(
+        [string]$SshHost,
+        [string]$InternalHost,
+        [string]$RemotePath,
+        [string]$LocalPath,
+        [string]$Description
+    )
+
+    Write-Host ">> $Description from $SshHost"
+    if (Invoke-External { & scp -r "${sshUser}@${SshHost}:${RemotePath}" $LocalPath }) {
+        $script:LastReachableSshHost = $SshHost
+        return
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($script:LastReachableSshHost) -and $script:LastReachableSshHost -ne $SshHost) {
+        Write-Host "Direct SCP from $SshHost failed. Retrying through $script:LastReachableSshHost to internal host $InternalHost..."
+        if (Invoke-External { & scp -r -o "ProxyJump=${sshUser}@${script:LastReachableSshHost}" "${sshUser}@${InternalHost}:${RemotePath}" $LocalPath }) {
+            return
+        }
+    }
+
+    throw "Command failed: $Description"
+}
+
 function Read-DeployEnv {
     param([string]$Path)
 
@@ -156,13 +181,18 @@ function Copy-Scripts {
         [string]$InternalHost,
         [string]$User,
         [string]$RemoteRoot,
-        [string[]]$Scripts
+        [string[]]$Scripts,
+        [string[]]$ExtraFiles = @(),
+        [bool]$IncludeDeployEnv = $true
     )
 
     $items = @()
     $items += $Scripts
+    $items += $ExtraFiles
     $items += "v3-distributed/start-node.sh"
-    $items += "v3-distributed/deploy.env"
+    if ($IncludeDeployEnv) {
+        $items += "v3-distributed/deploy.env"
+    }
     Copy-ToRemoteChecked -Sources $items -SshHost $HostName -InternalHost $InternalHost -RemotePath "${RemoteRoot}/v3-distributed/" -Description "Copy scripts to $HostName"
 }
 
@@ -170,8 +200,10 @@ $config = Read-DeployEnv -Path $EnvFile
 
 $sshUser = Require-Value -Config $config -Key "SSH_USER"
 $remoteRoot = Require-Value -Config $config -Key "REMOTE_ROOT"
+$clientHost = if ($config.ContainsKey("CLIENT_HOST")) { $config["CLIENT_HOST"] } else { Require-Value -Config $config -Key "VISUALIZATION_HOST" }
 $visualizationHost = Require-Value -Config $config -Key "VISUALIZATION_HOST"
 $masterHost = Require-Value -Config $config -Key "MASTER_HOST"
+$sshClientHost = if ($config.ContainsKey("SSH_CLIENT_HOST")) { $config["SSH_CLIENT_HOST"] } else { $clientHost }
 $sshVisualizationHost = if ($config.ContainsKey("SSH_VISUALIZATION_HOST")) { $config["SSH_VISUALIZATION_HOST"] } else { $visualizationHost }
 $sshMasterHost = if ($config.ContainsKey("SSH_MASTER_HOST")) { $config["SSH_MASTER_HOST"] } else { $masterHost }
 $partitions = [int](Require-Value -Config $config -Key "PARTITIONS")
@@ -179,6 +211,7 @@ $workerHosts = @($config["WORKER_HOSTS"])
 $sshWorkerHosts = if ($config.ContainsKey("SSH_WORKER_HOSTS")) { @($config["SSH_WORKER_HOSTS"]) } else { $workerHosts }
 $generateAndDistributePartitions = if ($config.ContainsKey("GENERATE_AND_DISTRIBUTE_PARTITIONS")) { $config["GENERATE_AND_DISTRIBUTE_PARTITIONS"].ToLowerInvariant() -ne "false" } else { $true }
 $copyFullDatagramToMaster = if ($config.ContainsKey("COPY_FULL_DATAGRAM_TO_MASTER")) { $config["COPY_FULL_DATAGRAM_TO_MASTER"].ToLowerInvariant() -ne "false" } else { $true }
+$partitionDistributionMode = if ($config.ContainsKey("PARTITION_DISTRIBUTION_MODE")) { $config["PARTITION_DISTRIBUTION_MODE"].ToLowerInvariant() } else { "master" }
 
 if ($workerHosts.Count -lt $partitions) {
     throw "WORKER_HOSTS has $($workerHosts.Count) entries, but PARTITIONS=$partitions"
@@ -207,11 +240,15 @@ Invoke-Checked { & .\gradlew.bat `
         ":v3-distributed:worker:installDist" `
         ":v3-distributed:partitioner:installDist" } "Gradle installDist"
 
-Write-Host "Deploying PC1 Visualization + Client to $sshVisualizationHost"
-Invoke-RemoteChecked -SshHost $sshVisualizationHost -InternalHost $visualizationHost -RemoteCommand "mkdir -p '${remoteRoot}/v3-distributed/visualization' '${remoteRoot}/v3-distributed/client' '${remoteRoot}/data'" -Description "Create PC1 directories"
-Copy-ToRemoteChecked -Sources @("-r", "v3-distributed/visualization/build") -SshHost $sshVisualizationHost -InternalHost $visualizationHost -RemotePath "${remoteRoot}/v3-distributed/visualization/" -Description "Copy visualization to PC1"
-Copy-ToRemoteChecked -Sources @("-r", "v3-distributed/client/build") -SshHost $sshVisualizationHost -InternalHost $visualizationHost -RemotePath "${remoteRoot}/v3-distributed/client/" -Description "Copy client to PC1"
-Copy-Scripts -HostName $sshVisualizationHost -InternalHost $visualizationHost -User $sshUser -RemoteRoot $remoteRoot -Scripts @("v3-distributed/start-visualization.sh", "v3-distributed/start-client.sh")
+Write-Host "Deploying Client to $sshClientHost"
+Invoke-RemoteChecked -SshHost $sshClientHost -InternalHost $clientHost -RemoteCommand "mkdir -p '${remoteRoot}/v3-distributed/client' '${remoteRoot}/data'" -Description "Create client directories"
+Copy-ToRemoteChecked -Sources @("-r", "v3-distributed/client/build") -SshHost $sshClientHost -InternalHost $clientHost -RemotePath "${remoteRoot}/v3-distributed/client/" -Description "Copy client"
+Copy-Scripts -HostName $sshClientHost -InternalHost $clientHost -User $sshUser -RemoteRoot $remoteRoot -Scripts @("v3-distributed/start-client.sh") -ExtraFiles @("v3-distributed/client.env") -IncludeDeployEnv $false
+
+Write-Host "Deploying Visualization to $sshVisualizationHost"
+Invoke-RemoteChecked -SshHost $sshVisualizationHost -InternalHost $visualizationHost -RemoteCommand "mkdir -p '${remoteRoot}/v3-distributed/visualization' '${remoteRoot}/data'" -Description "Create visualization directories"
+Copy-ToRemoteChecked -Sources @("-r", "v3-distributed/visualization/build") -SshHost $sshVisualizationHost -InternalHost $visualizationHost -RemotePath "${remoteRoot}/v3-distributed/visualization/" -Description "Copy visualization"
+Copy-Scripts -HostName $sshVisualizationHost -InternalHost $visualizationHost -User $sshUser -RemoteRoot $remoteRoot -Scripts @("v3-distributed/start-visualization.sh")
 
 Write-Host "Deploying PC2 Master + Broker to $sshMasterHost"
 Invoke-RemoteChecked -SshHost $sshMasterHost -InternalHost $masterHost -RemoteCommand "mkdir -p '${remoteRoot}/v3-distributed/master' '${remoteRoot}/v3-distributed/broker' '${remoteRoot}/v3-distributed/partitioner' '${remoteRoot}/data'" -Description "Create PC2 directories"
@@ -243,34 +280,63 @@ for ($i = 1; $i -le $partitions; $i++) {
 }
 
 if ($generateAndDistributePartitions) {
-    Write-Host "Distributing partitions from PC2 to workers over the internal network"
-    Invoke-RemoteChecked -SshHost $sshMasterHost -InternalHost $masterHost -RemoteCommand "cd '${remoteRoot}' && chmod +x v3-distributed/distribute-partitions-from-master.sh && bash v3-distributed/distribute-partitions-from-master.sh" -Description "Distribute partitions from PC2"
+    if ($partitionDistributionMode -eq "windows") {
+        Write-Host "Copying generated partitions from PC2 to Windows for emergency distribution"
+        $localPartitionRoot = "build\tmp\deploy-partitions"
+        $localPartitionsDir = Join-Path $localPartitionRoot "partitions-${partitions}"
+        if (Test-Path $localPartitionRoot) {
+            Remove-Item -LiteralPath $localPartitionRoot -Recurse -Force
+        }
+        New-Item -ItemType Directory -Force -Path $localPartitionRoot | Out-Null
+        Copy-FromRemoteChecked -SshHost $sshMasterHost -InternalHost $masterHost -RemotePath "${remoteRoot}/data/partitions-${partitions}" -LocalPath $localPartitionRoot -Description "Copy generated partitions from PC2"
 
-    for ($i = 1; $i -le $partitions; $i++) {
-        $hostName = $sshWorkerHosts[$i - 1]
-        $internalHostName = $workerHosts[$i - 1]
-        $partitionIndex = $i - 1
-        Invoke-RemoteChecked -SshHost $hostName -InternalHost $internalHostName -RemoteCommand "test -f '${remoteRoot}/data/partitions-${partitions}/partition-${partitionIndex}.csv'" -Description "Verify partition-$partitionIndex exists on Worker $i"
+        Write-Host "Distributing partitions from Windows to workers"
+
+        for ($i = 1; $i -le $partitions; $i++) {
+            $hostName = $sshWorkerHosts[$i - 1]
+            $internalHostName = $workerHosts[$i - 1]
+            $partitionIndex = $i - 1
+            $partitionFile = Join-Path $localPartitionsDir "partition-${partitionIndex}.csv"
+            Require-Path $partitionFile
+            Invoke-RemoteChecked -SshHost $hostName -InternalHost $internalHostName -RemoteCommand "mkdir -p '${remoteRoot}/data/partitions-${partitions}' '${remoteRoot}/data'" -Description "Create data directories on Worker $i"
+            Copy-ToRemoteChecked -Sources @($partitionFile) -SshHost $hostName -InternalHost $internalHostName -RemotePath "${remoteRoot}/data/partitions-${partitions}/" -Description "Copy partition-$partitionIndex to Worker $i"
+            Copy-ToRemoteChecked -Sources @("data/lines-241-ActiveGT.csv") -SshHost $hostName -InternalHost $internalHostName -RemotePath "${remoteRoot}/data/" -Description "Copy routes file to Worker $i"
+            Invoke-RemoteChecked -SshHost $hostName -InternalHost $internalHostName -RemoteCommand "test -f '${remoteRoot}/data/partitions-${partitions}/partition-${partitionIndex}.csv'" -Description "Verify partition-$partitionIndex exists on Worker $i"
+        }
+    } elseif ($partitionDistributionMode -eq "master") {
+        Write-Host "Distributing partitions from PC2 to workers over the internal network"
+        Invoke-RemoteChecked -SshHost $sshMasterHost -InternalHost $masterHost -RemoteCommand "cd '${remoteRoot}' && chmod +x v3-distributed/distribute-partitions-from-master.sh && bash v3-distributed/distribute-partitions-from-master.sh" -Description "Distribute partitions from PC2"
+
+        for ($i = 1; $i -le $partitions; $i++) {
+            $hostName = $sshWorkerHosts[$i - 1]
+            $internalHostName = $workerHosts[$i - 1]
+            $partitionIndex = $i - 1
+            Invoke-RemoteChecked -SshHost $hostName -InternalHost $internalHostName -RemoteCommand "test -f '${remoteRoot}/data/partitions-${partitions}/partition-${partitionIndex}.csv'" -Description "Verify partition-$partitionIndex exists on Worker $i"
+        }
+    } else {
+        throw "Unsupported PARTITION_DISTRIBUTION_MODE=$partitionDistributionMode. Use 'master' or 'windows'."
     }
 }
 
 Write-Host "Applying execution permissions..."
-$allHosts = @($sshVisualizationHost, $sshMasterHost) + $sshWorkerHosts[0..($partitions - 1)]
+$allHosts = @($sshClientHost, $sshVisualizationHost, $sshMasterHost) + $sshWorkerHosts[0..($partitions - 1)]
 for ($i = 0; $i -lt $allHosts.Count; $i++) {
     $hostName = $allHosts[$i]
     if ($i -eq 0) {
-        $internalHostName = $visualizationHost
+        $internalHostName = $clientHost
     } elseif ($i -eq 1) {
+        $internalHostName = $visualizationHost
+    } elseif ($i -eq 2) {
         $internalHostName = $masterHost
     } else {
-        $internalHostName = $workerHosts[$i - 2]
+        $internalHostName = $workerHosts[$i - 3]
     }
     Invoke-RemoteChecked -SshHost $hostName -InternalHost $internalHostName -RemoteCommand "cd '${remoteRoot}' && chmod +x v3-distributed/*.sh v3-distributed/*/build/install/*/bin/*" -Description "Apply execution permissions on $hostName"
 }
 
 Write-Host "Runtime deployment files copied successfully."
 Write-Host "Start order:"
-Write-Host "1. PC1: bash v3-distributed/start-node.sh visualization"
+Write-Host "1. Visualization node: bash v3-distributed/start-node.sh visualization"
 Write-Host "2. Workers: bash v3-distributed/start-node.sh worker <1..$partitions>"
-Write-Host "3. PC2: bash v3-distributed/start-node.sh coordination"
-Write-Host "4. PC1: bash v3-distributed/start-node.sh client"
+Write-Host "3. Coordination node: bash v3-distributed/start-node.sh coordination"
+Write-Host "4. Client node: bash v3-distributed/start-node.sh client"
