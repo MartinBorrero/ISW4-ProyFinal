@@ -53,6 +53,7 @@ public class VisualizationI implements Visualization {
     private final JComboBox<String> renderLimit;
     private final List<BusPosition> positionHistory;
     private final TreeSet<String> observedMonths;
+    private final TreeSet<String> observedDays;
     private boolean mapFilterApplied;
     private final boolean guiEnabled;
 
@@ -61,13 +62,14 @@ public class VisualizationI implements Visualization {
         this.tableModel = new DefaultTableModel(new Object[]{"Timestamp", "Source", "Destination", "Type", "Detail"}, 0);
         this.mapPanel = new MapPanel();
         this.statusLabel = new JLabel("Waiting for distributed bus events...");
-        this.filterMode = new JComboBox<>(new String[]{"All", "Month"});
+        this.filterMode = new JComboBox<>(new String[]{"All", "Day", "Month"});
         this.filterValue = new JComboBox<>();
         this.filterValue.setEditable(true);
         this.renderLimit = new JComboBox<>(new String[]{"25", "50", "100", "200"});
         this.renderLimit.setSelectedItem("50");
         this.positionHistory = new ArrayList<>();
         this.observedMonths = new TreeSet<>();
+        this.observedDays = new TreeSet<>();
         this.mapFilterApplied = false;
         if (guiEnabled) {
             SwingUtilities.invokeLater(this::openWindow);
@@ -127,7 +129,7 @@ public class VisualizationI implements Visualization {
         JButton applyButton = new JButton("Apply filter");
         JButton clearButton = new JButton("Clear");
         filterMode.addActionListener(ignored -> refreshFilterValues());
-        filterValue.setToolTipText("Select an observed month or type yyyy-MM");
+        filterValue.setToolTipText("Select an observed day/month or type yyyy-MM-dd / yyyy-MM");
         applyButton.addActionListener(ignored -> applyCurrentFilter());
         clearButton.addActionListener(ignored -> {
             filterMode.setSelectedItem("All");
@@ -141,7 +143,7 @@ public class VisualizationI implements Visualization {
         panel.add(filterValue);
         panel.add(new JLabel("Max buses:"));
         panel.add(renderLimit);
-        panel.add(new JLabel("Select observed month, then apply"));
+        panel.add(new JLabel("Select observed day or month, then apply"));
         panel.add(applyButton);
         panel.add(clearButton);
         refreshFilterValues();
@@ -178,6 +180,9 @@ public class VisualizationI implements Visualization {
     }
 
     private void registerObservedDate(BusPosition position) {
+        if (position.date.length() >= 10) {
+            observedDays.add(position.date.substring(0, 10));
+        }
         if (position.date.length() >= 7) {
             observedMonths.add(position.date.substring(0, 7));
         }
@@ -190,7 +195,11 @@ public class VisualizationI implements Visualization {
         String mode = String.valueOf(filterMode.getSelectedItem());
         filterValue.removeAllItems();
         filterValue.addItem("");
-        if ("Month".equals(mode)) {
+        if ("Day".equals(mode)) {
+            for (String day : observedDays) {
+                filterValue.addItem(day);
+            }
+        } else if ("Month".equals(mode)) {
             for (String month : observedMonths) {
                 filterValue.addItem(month);
             }
@@ -206,6 +215,9 @@ public class VisualizationI implements Visualization {
             return true;
         }
         if ("Month".equals(mode)) {
+            return position.date.startsWith(value);
+        }
+        if ("Day".equals(mode)) {
             return position.date.startsWith(value);
         }
         return true;
