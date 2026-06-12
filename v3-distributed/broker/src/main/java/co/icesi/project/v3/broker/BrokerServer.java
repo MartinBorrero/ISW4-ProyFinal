@@ -8,6 +8,8 @@ import com.zeroc.Ice.Util;
 import sitmmio.v3.slice.MasterPrx;
 import sitmmio.v3.slice.VisualizationPrx;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -21,8 +23,8 @@ public class BrokerServer {
         try {
             communicator = Util.initialize(args);
             MasterPrx master = resolveMaster(communicator);
-            VisualizationPrx visualization = resolveVisualization(communicator);
-            servant = new BrokerI(master, visualization);
+            List<VisualizationPrx> visualizations = resolveVisualizations(communicator);
+            servant = new BrokerI(master, visualizations);
             ObjectAdapter adapter = communicator.createObjectAdapter("BrokerAdapter");
             adapter.add(servant, Util.stringToIdentity("Broker"));
             adapter.activate();
@@ -64,24 +66,35 @@ public class BrokerServer {
         }
     }
 
-    private static VisualizationPrx resolveVisualization(Communicator communicator) {
-        String proxyText = communicator.getProperties().getProperty("Visualization.Proxy");
-        try {
-            if (proxyText == null || proxyText.isBlank()) {
-                return null;
+    private static List<VisualizationPrx> resolveVisualizations(Communicator communicator) {
+        List<VisualizationPrx> visualizations = new ArrayList<>();
+        String proxiesText = communicator.getProperties().getProperty("Visualization.Proxies");
+        if (proxiesText != null && !proxiesText.isBlank()) {
+            for (String proxyText : proxiesText.split(";")) {
+                addVisualization(communicator, visualizations, proxyText.trim());
             }
-            ObjectPrx base = communicator.propertyToProxy("Visualization.Proxy");
+        } else {
+            addVisualization(communicator, visualizations, communicator.getProperties().getProperty("Visualization.Proxy"));
+        }
+        return visualizations;
+    }
+
+    private static void addVisualization(Communicator communicator, List<VisualizationPrx> visualizations, String proxyText) {
+        if (proxyText == null || proxyText.isBlank()) {
+            return;
+        }
+        try {
+            ObjectPrx base = communicator.stringToProxy(proxyText);
             VisualizationPrx proxy = VisualizationPrx.checkedCast(base);
             if (proxy == null) {
-                LOGGER.warning("Configured Visualization proxy is not a Visualization servant");
+                LOGGER.warning("Configured Visualization proxy is not a Visualization servant: " + proxyText);
+                return;
             }
-            return proxy;
+            visualizations.add(proxy);
         } catch (LocalException e) {
             LOGGER.warning("Visualization is not reachable at " + proxyText + "; continuing without UI events");
-            return null;
         } catch (RuntimeException e) {
             LOGGER.log(Level.WARNING, "Could not resolve Visualization proxy; continuing without UI events", e);
-            return null;
         }
     }
 }

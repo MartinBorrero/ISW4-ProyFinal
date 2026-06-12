@@ -11,4 +11,4 @@ VisualizationAdapter.Endpoints=tcp -h ${BIND_HOST} -p ${VISUALIZATION_PORT}
 Ice.Warn.Connections=1
 Ice.Trace.Network=0
 CFG
-v3-distributed/visualization/build/install/visualization/bin/visualization --Ice.Config="$TMP_CFG"
+bash v3-distributed/visualization/build/install/visualization/bin/visualization --Ice.Config="$TMP_CFG"

@@ -8,6 +8,8 @@ import sitmmio.v3.slice.MasterPrx;
 import sitmmio.v3.slice.VisualizationPrx;
 import sitmmio.v3.slice.WorkerPrx;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -30,8 +32,8 @@ public class WorkerServer {
             communicator = Util.initialize(args);
             String configuredId = communicator.getProperties().getProperty("Worker.Id");
             String workerId = configuredId == null || configuredId.isBlank() ? "worker-" + UUID.randomUUID() : configuredId;
-            VisualizationPrx visualization = VisualizationPrx.uncheckedCast(communicator.propertyToProxy("Visualization.Proxy"));
-            WorkerI servant = new WorkerI(workerId, visualization);
+            List<VisualizationPrx> visualizations = resolveVisualizations(communicator);
+            WorkerI servant = new WorkerI(workerId, visualizations);
             ObjectAdapter adapter = communicator.createObjectAdapter("WorkerAdapter");
             ObjectPrx workerBase = adapter.add(servant, Util.stringToIdentity(workerId));
             WorkerPrx workerProxy = WorkerPrx.uncheckedCast(workerBase);
@@ -90,5 +92,28 @@ public class WorkerServer {
             }
         }
         System.exit(status);
+    }
+
+    private static List<VisualizationPrx> resolveVisualizations(Communicator communicator) {
+        List<VisualizationPrx> visualizations = new ArrayList<>();
+        String proxiesText = communicator.getProperties().getProperty("Visualization.Proxies");
+        if (proxiesText != null && !proxiesText.isBlank()) {
+            for (String proxyText : proxiesText.split(";")) {
+                addVisualization(communicator, visualizations, proxyText.trim());
+            }
+        } else {
+            addVisualization(communicator, visualizations, communicator.getProperties().getProperty("Visualization.Proxy"));
+        }
+        return visualizations;
+    }
+
+    private static void addVisualization(Communicator communicator, List<VisualizationPrx> visualizations, String proxyText) {
+        if (proxyText == null || proxyText.isBlank()) {
+            return;
+        }
+        VisualizationPrx proxy = VisualizationPrx.uncheckedCast(communicator.stringToProxy(proxyText));
+        if (proxy != null) {
+            visualizations.add(proxy);
+        }
     }
 }

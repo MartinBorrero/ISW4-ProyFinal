@@ -41,12 +41,12 @@ public class WorkerI implements Worker {
     private static final int MAX_POSITION_EVENTS_PER_TASK = 750;
 
     private final String workerId;
-    private final VisualizationPrx visualization;
+    private final List<VisualizationPrx> visualizations;
     private final ExecutorService eventExecutor = Executors.newSingleThreadExecutor();
 
-    public WorkerI(String workerId, VisualizationPrx visualization) {
+    public WorkerI(String workerId, List<VisualizationPrx> visualizations) {
         this.workerId = workerId;
-        this.visualization = visualization;
+        this.visualizations = visualizations == null ? List.of() : List.copyOf(visualizations);
     }
 
     @Override
@@ -213,7 +213,7 @@ public class WorkerI implements Worker {
     }
 
     private void publishPosition(int busId, int lineId, double latitude, double longitude, LocalDateTime date) {
-        if (visualization == null) {
+        if (visualizations.isEmpty()) {
             return;
         }
         String detail = "worker=" + workerId
@@ -224,10 +224,12 @@ public class WorkerI implements Worker {
                 + ";date=" + date;
         BusEvent event = new BusEvent(workerId, "BusEventMonitor", "BUS_POSITION", Instant.now().toString(), detail);
         eventExecutor.submit(() -> {
-            try {
-                visualization.publish(event);
-            } catch (RuntimeException e) {
-                LOGGER.log(Level.FINE, "Could not publish bus position event", e);
+            for (VisualizationPrx visualization : visualizations) {
+                try {
+                    visualization.publish(event);
+                } catch (RuntimeException e) {
+                    LOGGER.log(Level.FINE, "Could not publish bus position event", e);
+                }
             }
         });
     }

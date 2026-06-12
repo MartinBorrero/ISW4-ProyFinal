@@ -21,4 +21,4 @@ Client.PartitionCount=${PARTITIONS}
 Ice.Warn.Connections=1
 Ice.Trace.Network=0
 CFG
-v3-distributed/client/build/install/client/bin/client --Ice.Config="$TMP_CFG"
+bash v3-distributed/client/build/install/client/bin/client --Ice.Config="$TMP_CFG"

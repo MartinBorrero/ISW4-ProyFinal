@@ -20,4 +20,7 @@ Visualization.Proxy=Visualization:tcp -h ${VISUALIZATION_HOST} -p ${VISUALIZATIO
 Ice.Warn.Connections=1
 Ice.Trace.Network=0
 CFG
-JAVA_OPTS="-Xmx${WORKER_HEAP}" v3-distributed/worker/build/install/worker/bin/worker --Ice.Config="$TMP_CFG"
+if [[ -n "${VISUALIZATION_PROXIES:-}" ]]; then
+  echo "Visualization.Proxies=${VISUALIZATION_PROXIES}" >> "$TMP_CFG"
+fi
+JAVA_OPTS="-Xmx${WORKER_HEAP}" bash v3-distributed/worker/build/install/worker/bin/worker --Ice.Config="$TMP_CFG"

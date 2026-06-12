@@ -10,6 +10,7 @@ import sitmmio.v3.slice.SpeedTask;
 import sitmmio.v3.slice.VisualizationPrx;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.logging.Level;
@@ -19,12 +20,12 @@ public class BrokerI implements Broker {
     private static final Logger LOGGER = Logger.getLogger(BrokerI.class.getName());
 
     private final MasterPrx master;
-    private final VisualizationPrx visualization;
+    private final List<VisualizationPrx> visualizations;
     private final ExecutorService eventExecutor = Executors.newSingleThreadExecutor();
 
-    public BrokerI(MasterPrx master, VisualizationPrx visualization) {
+    public BrokerI(MasterPrx master, List<VisualizationPrx> visualizations) {
         this.master = master;
-        this.visualization = visualization;
+        this.visualizations = visualizations == null ? List.of() : List.copyOf(visualizations);
     }
 
     @Override
@@ -51,15 +52,17 @@ public class BrokerI implements Broker {
     }
 
     private void publish(String source, String destination, String type, String detail) {
-        if (visualization == null) {
+        if (visualizations.isEmpty()) {
             return;
         }
         BusEvent event = new BusEvent(source, destination, type, Instant.now().toString(), detail);
         eventExecutor.submit(() -> {
-            try {
-                visualization.publish(event);
-            } catch (RuntimeException e) {
-                LOGGER.log(Level.WARNING, "Visualization event delivery failed", e);
+            for (VisualizationPrx visualization : visualizations) {
+                try {
+                    visualization.publish(event);
+                } catch (RuntimeException e) {
+                    LOGGER.log(Level.WARNING, "Visualization event delivery failed", e);
+                }
             }
         });
     }

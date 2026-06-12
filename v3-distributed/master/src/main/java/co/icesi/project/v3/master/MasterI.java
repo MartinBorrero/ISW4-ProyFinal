@@ -32,10 +32,10 @@ public class MasterI implements Master {
     private final ConcurrentHashMap<String, WorkerPrx> workers = new ConcurrentHashMap<>();
     private final ExecutorService taskExecutor = Executors.newCachedThreadPool();
     private final ExecutorService eventExecutor = Executors.newSingleThreadExecutor();
-    private final VisualizationPrx visualization;
+    private final List<VisualizationPrx> visualizations;
 
-    public MasterI(VisualizationPrx visualization) {
-        this.visualization = visualization;
+    public MasterI(List<VisualizationPrx> visualizations) {
+        this.visualizations = visualizations == null ? List.of() : List.copyOf(visualizations);
     }
 
     @Override
@@ -146,15 +146,17 @@ public class MasterI implements Master {
     }
 
     private void publish(String source, String destination, String type, String detail) {
-        if (visualization == null) {
+        if (visualizations.isEmpty()) {
             return;
         }
         BusEvent event = new BusEvent(source, destination, type, Instant.now().toString(), detail);
         eventExecutor.submit(() -> {
-            try {
-                visualization.publish(event);
-            } catch (RuntimeException e) {
-                LOGGER.log(Level.WARNING, "Visualization event delivery failed", e);
+            for (VisualizationPrx visualization : visualizations) {
+                try {
+                    visualization.publish(event);
+                } catch (RuntimeException e) {
+                    LOGGER.log(Level.WARNING, "Visualization event delivery failed", e);
+                }
             }
         });
     }
