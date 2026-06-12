@@ -13,14 +13,14 @@ fi
 # shellcheck source=/dev/null
 source "$ENV_FILE"
 
-PARTITIONS="${PARTITIONS:?PARTITIONS is required}"
-REMOTE_ROOT="${REMOTE_ROOT:?REMOTE_ROOT is required}"
-SSH_USER="${SSH_USER:?SSH_USER is required}"
-
-if [[ "${#WORKER_HOSTS[@]}" -lt "$PARTITIONS" ]]; then
-  echo "WORKER_HOSTS has ${#WORKER_HOSTS[@]} entries, but PARTITIONS=$PARTITIONS"
+if ! declare -p WORKER_HOSTS >/dev/null 2>&1 || [[ "${#WORKER_HOSTS[@]}" -eq 0 ]]; then
+  echo "WORKER_HOSTS must contain at least one worker; partition count is derived from worker count"
   exit 1
 fi
+
+PARTITIONS="${#WORKER_HOSTS[@]}"
+REMOTE_ROOT="${REMOTE_ROOT:?REMOTE_ROOT is required}"
+SSH_USER="${SSH_USER:?SSH_USER is required}"
 
 test -d "data/partitions-${PARTITIONS}" || {
   echo "Missing data/partitions-${PARTITIONS}. Generate partitions on this machine first."
@@ -43,9 +43,9 @@ for i in $(seq 1 "$PARTITIONS"); do
   }
 
   echo "Sending partition-${partition_index}.csv to worker-${i} at ${worker_host}"
-  ssh "${SSH_USER}@${worker_host}" "mkdir -p '${REMOTE_ROOT}/data/partitions-${PARTITIONS}'"
-  scp "$partition_file" "${SSH_USER}@${worker_host}:${REMOTE_ROOT}/data/partitions-${PARTITIONS}/"
-  scp "data/lines-241-ActiveGT.csv" "${SSH_USER}@${worker_host}:${REMOTE_ROOT}/data/"
+  ssh -o StrictHostKeyChecking=accept-new "${SSH_USER}@${worker_host}" "mkdir -p '${REMOTE_ROOT}/data/partitions-${PARTITIONS}'"
+  scp -o StrictHostKeyChecking=accept-new "$partition_file" "${SSH_USER}@${worker_host}:${REMOTE_ROOT}/data/partitions-${PARTITIONS}/"
+  scp -o StrictHostKeyChecking=accept-new "data/lines-241-ActiveGT.csv" "${SSH_USER}@${worker_host}:${REMOTE_ROOT}/data/"
 done
 
 echo "Partition distribution from master completed."

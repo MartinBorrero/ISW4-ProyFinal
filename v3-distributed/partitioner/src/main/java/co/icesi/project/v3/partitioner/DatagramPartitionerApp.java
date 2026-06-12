@@ -5,6 +5,9 @@ import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -14,6 +17,7 @@ import java.util.logging.Logger;
 
 public class DatagramPartitionerApp {
     private static final Logger LOGGER = Logger.getLogger(DatagramPartitionerApp.class.getName());
+    private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     public static void main(String[] args) {
         int status = 0;
@@ -64,7 +68,8 @@ public class DatagramPartitionerApp {
                         continue;
                     }
                     int busId = Integer.parseInt(parts[11]);
-                    String groupKey = busId + "|" + lineId;
+                    LocalDate day = LocalDateTime.parse(parts[10], FORMATTER).toLocalDate();
+                    String groupKey = busId + "|" + lineId + "|" + day;
                     int partition = Math.floorMod(groupKey.hashCode(), partitions);
                     BufferedWriter writer = writers.get(partition);
                     writer.write(line);

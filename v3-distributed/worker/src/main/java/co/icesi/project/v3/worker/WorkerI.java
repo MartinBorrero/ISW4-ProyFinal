@@ -118,13 +118,14 @@ public class WorkerI implements Worker {
                     continue;
                 }
                 int busId = Integer.parseInt(parts[11]);
-                String groupKey = busId + "|" + lineId;
+                LocalDateTime date = LocalDateTime.parse(parts[10], FORMATTER);
+                LocalDate day = date.toLocalDate();
+                String groupKey = busId + "|" + lineId + "|" + day;
                 int partition = Math.floorMod(groupKey.hashCode(), partitionCount);
                 if (!prepartitionedInput && partition != partitionIndex) {
                     continue;
                 }
 
-                LocalDateTime date = LocalDateTime.parse(parts[10], FORMATTER);
                 double latitude = Long.parseLong(parts[4]) / 1e7;
                 double longitude = Long.parseLong(parts[5]) / 1e7;
                 if (acceptedRows % POSITION_EVENT_INTERVAL == 0 && publishedPositions < MAX_POSITION_EVENTS_PER_TASK) {
