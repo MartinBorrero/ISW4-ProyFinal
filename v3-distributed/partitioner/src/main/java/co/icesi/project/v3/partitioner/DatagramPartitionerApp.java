@@ -5,9 +5,6 @@ import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -17,7 +14,7 @@ import java.util.logging.Logger;
 
 public class DatagramPartitionerApp {
     private static final Logger LOGGER = Logger.getLogger(DatagramPartitionerApp.class.getName());
-    private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final int IO_BUFFER_SIZE = 1024 * 1024;
 
     public static void main(String[] args) {
         int status = 0;
@@ -48,27 +45,27 @@ public class DatagramPartitionerApp {
         List<BufferedWriter> writers = new ArrayList<>(partitions);
         try {
             for (int i = 0; i < partitions; i++) {
-                writers.add(Files.newBufferedWriter(outputDir.resolve("partition-" + i + ".csv")));
+                writers.add(new BufferedWriter(Files.newBufferedWriter(outputDir.resolve("partition-" + i + ".csv")), IO_BUFFER_SIZE));
             }
             long scanned = 0;
             long written = 0;
-            try (BufferedReader reader = Files.newBufferedReader(datagramsPath)) {
+            try (BufferedReader reader = new BufferedReader(Files.newBufferedReader(datagramsPath), IO_BUFFER_SIZE)) {
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    String[] parts = line.split(",");
-                    if (parts.length < 12 || !isInteger(parts[7])) {
+                    DatagramColumns columns = extractDatagramColumns(line);
+                    if (columns == null || !isInteger(columns.lineId)) {
                         continue;
                     }
                     scanned++;
                     if (maxRows > 0 && scanned > maxRows) {
                         break;
                     }
-                    int lineId = Integer.parseInt(parts[7]);
+                    int lineId = Integer.parseInt(columns.lineId);
                     if (!activeRoutes.contains(lineId)) {
                         continue;
                     }
-                    int busId = Integer.parseInt(parts[11]);
-                    LocalDate day = LocalDateTime.parse(parts[10], FORMATTER).toLocalDate();
+                    int busId = Integer.parseInt(columns.busId);
+                    String day = columns.date.substring(0, 10);
                     String groupKey = busId + "|" + lineId + "|" + day;
                     int partition = Math.floorMod(groupKey.hashCode(), partitions);
                     BufferedWriter writer = writers.get(partition);
@@ -91,16 +88,47 @@ public class DatagramPartitionerApp {
 
     private static Set<Integer> loadRoutes(Path path) throws IOException {
         Set<Integer> routes = new HashSet<>();
-        try (BufferedReader reader = Files.newBufferedReader(path)) {
+        try (BufferedReader reader = new BufferedReader(Files.newBufferedReader(path), IO_BUFFER_SIZE)) {
             String line;
             while ((line = reader.readLine()) != null) {
-                String[] parts = line.split(",");
-                if (parts.length > 0 && isInteger(parts[0])) {
-                    routes.add(Integer.parseInt(parts[0]));
+                String routeId = firstColumn(line);
+                if (isInteger(routeId)) {
+                    routes.add(Integer.parseInt(routeId));
                 }
             }
         }
         return routes;
+    }
+
+    private static DatagramColumns extractDatagramColumns(String line) {
+        String lineId = null;
+        String date = null;
+        String busId = null;
+        int column = 0;
+        int start = 0;
+        for (int i = 0; i <= line.length(); i++) {
+            if (i == line.length() || line.charAt(i) == ',') {
+                if (column == 7) {
+                    lineId = line.substring(start, i);
+                } else if (column == 10) {
+                    date = line.substring(start, i);
+                } else if (column == 11) {
+                    busId = line.substring(start, i);
+                    break;
+                }
+                column++;
+                start = i + 1;
+            }
+        }
+        if (lineId == null || date == null || date.length() < 10 || busId == null || !isInteger(busId)) {
+            return null;
+        }
+        return new DatagramColumns(lineId, date, busId);
+    }
+
+    private static String firstColumn(String line) {
+        int separator = line.indexOf(',');
+        return separator < 0 ? line : line.substring(0, separator);
     }
 
     private static boolean isInteger(String value) {
@@ -143,6 +171,18 @@ public class DatagramPartitionerApp {
         private PartitionSummary(long scannedRows, long writtenRows) {
             this.scannedRows = scannedRows;
             this.writtenRows = writtenRows;
+        }
+    }
+
+    private static final class DatagramColumns {
+        private final String lineId;
+        private final String date;
+        private final String busId;
+
+        private DatagramColumns(String lineId, String date, String busId) {
+            this.lineId = lineId;
+            this.date = date;
+            this.busId = busId;
         }
     }
 }
